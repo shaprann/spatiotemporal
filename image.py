@@ -36,6 +36,10 @@ class ImageReader:
     def index(self):
         return self._index
 
+    @property
+    def index_string(self):
+        return join(*[str(index_part) for index_part in self._index])
+
     def read_lazy(self):
 
         # read as dask array
