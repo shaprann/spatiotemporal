@@ -1,0 +1,49 @@
+---
+dataset_index:
+  - "ROI"
+  - "tile"
+  - "patch"
+  - "timestep"
+
+dataset_content:
+  - "S1"
+  - "S2"
+  - "S2_cloudmask"
+  - "S2_cloud_percentage"
+
+hierarchy_in_storage:
+  - "ROI"
+  - "tile"
+  - "modality"
+  - "timestep"
+
+filename_contains:
+  - "modality"
+  - "ROI"
+  - "tile"
+  - "timestep"
+  - "date"
+  - "patch"
+
+band_definition:
+  "S1": "polarization"
+  "S2": "band"
+
+bands:
+  "S1":
+    - "VV"
+    - "VH"
+  "S2":
+    - "B1"
+    - "B2"
+    - "B3"
+    - "B4"
+    - "B5"
+    - "B6"
+    - "B7"
+    - "B8"
+    - "B8A"
+    - "B9"
+    - "B10"
+    - "B11"
+    - "B12"
