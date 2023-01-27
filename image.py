@@ -38,27 +38,40 @@ class ImageReader:
 
     def read_lazy(self):
 
+        # TODO: rewrite hardcoded parts like timestep and patch assignment
+
         # read as dask array
         lazy_image = rxr.open_rasterio(self.path, cache=False, chunks={})
 
         # rename DataArray
         lazy_image = lazy_image.rename(self.image_type)
 
+        # add timestep as dimension with coordinate
+        lazy_image = lazy_image.expand_dims({"timestep": [self.metadata["timestep"]]})
+
+        # add 'date' as coordinate, create index so that we can use it to select data.
+        lazy_image = lazy_image.assign_coords({"date": ("timestep", [self.metadata["date"]])})
+
+        # add patch as coordinate
+        lazy_image = lazy_image.assign_coords({"patch": self.metadata["patch"]})
+
         # assign new band names
         lazy_image = lazy_image.assign_coords(band=self.manager.config['bands'][self.image_type])
 
-        # rename coordinate for bands if necessary, suppress occasional warnings
+        # rename the coordinate for bands if necessary, suppress occasional warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             lazy_image = lazy_image.rename({"band": self.manager.config['band_definition'][self.image_type]})
 
         # set attributes
-        lazy_image.attrs["path"] = self.path
-        lazy_image.attrs["dir_path"] = self.dir_path
-        lazy_image.attrs["filename"] = self.filename
-
         for metadata_type, metadata in self.metadata.items():
+            if metadata_type in lazy_image.coords:
+                continue
             lazy_image.attrs[metadata_type] = metadata
+
+        # add an index to "date", so that we can use it to select data
+        # doing it earlier in the code does not work because of some strange bug
+        # lazy_image = lazy_image.set_xindex("date")
 
         lazy_image = lazy_image.to_dataset()
 
