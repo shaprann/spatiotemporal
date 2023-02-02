@@ -36,7 +36,7 @@ class Sen12mscrtsDatasetManager:
         self.cloud_masks_dir = cloud_masks_dir
         self.cloud_percentage_csv = cloud_percentage_csv
 
-        self._data_found = {}
+        self._data_found = []
         self._data = None
 
         # self.load_dataset()
@@ -84,14 +84,15 @@ class Sen12mscrtsDatasetManager:
                         directory=current_path,
                         filename=filename
                     )
-                    self._data_found[image_reader.index_string] = image_reader.image
+                    self._data_found.append(image_reader)
 
     def build_tree(self):
 
         dt = datatree.DataTree(name="SEN12MS-CR-TS")
-        for index_string, image in tqdm(self._data_found.items(), desc="Add images to DataTree"):
-            dt[index_string] = image
+        for image_reader in tqdm(self._data_found, desc="Add images to DataTree"):
+            dt[image_reader.index_string] = image_reader.image
         self._data = dt
+        self._data_found = []
 
     # TODO: write a more pythonic function which follows sen12mscrts.yaml specifications
     def merge_by_timestep(self):
