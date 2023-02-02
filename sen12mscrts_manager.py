@@ -8,6 +8,7 @@ from tqdm import tqdm
 import xarray as xr
 import datatree
 from s2cloudless import S2PixelCloudDetector
+import pickle
 
 xr.set_options(keep_attrs=True)
 
@@ -142,6 +143,22 @@ class Sen12mscrtsDatasetManager:
         dataset = (xr.Dataset)(dataset)
         dataset["cloud_percentage"] = dataset["cloud_mask"].mean(dim=["lat", "lon"])
         return dataset
+
+    def save(self, filepath=None):
+
+        if filepath is None:
+            filepath = join(self.root_dir, "sen12mscrts_datatree.pickle")
+
+        with open(filepath, "wb") as file:
+            pickle.dump(self._data, file)
+
+    def load_from_file(self, filepath=None):
+
+        if filepath is None:
+            filepath = join(self.root_dir, "sen12mscrts_datatree.pickle")
+
+        with open(filepath, 'rb') as f:
+            self._data = pickle.load(f)
 
     def add_path_to_cloudmask(self):
 
