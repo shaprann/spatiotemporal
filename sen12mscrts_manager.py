@@ -30,7 +30,8 @@ class Sen12mscrtsDatasetManager:
             cloud_percentage_csv=None,
             cloud_percentage_buffer=None
     ):
-
+        if not isdir(root_dir):
+            raise ValueError(f"Provided root directory does not exist: {root_dir}")
         self.root_dir = root_dir
         self.cloud_masks_dir = cloud_masks_dir
         self.cloud_percentage_csv = cloud_percentage_csv
