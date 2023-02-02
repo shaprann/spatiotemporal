@@ -39,8 +39,6 @@ class Sen12mscrtsDatasetManager:
         self._data = None
 
         # self.load_dataset()
-        # self.load_cloudmasks()
-        # self.load_cloud_percentage()
 
     @property
     def data(self):
@@ -48,6 +46,20 @@ class Sen12mscrtsDatasetManager:
         return self._data
 
     def load_dataset(self):
+
+        self.find_and_read_files()
+        self.build_tree()
+        self.merge_by_timestep()
+
+        print("Add cloud masks...")
+        self.add_cloud_masks()
+
+        print("Add cloud percentage...")
+        self.add_cloud_percentages()
+
+        print("Done!")
+
+    def find_and_read_files(self):
         """
         Creates a pd.DataFrame, finds all dataset files in root directory, and adds them to the dataframe
         :return:
@@ -68,7 +80,7 @@ class Sen12mscrtsDatasetManager:
 
                     image_reader = ImageReader(
                         manager=self,
-                        dir_path=current_path,
+                        directory=current_path,
                         filename=filename
                     )
                     self._data_found[image_reader.index_string] = image_reader.image
