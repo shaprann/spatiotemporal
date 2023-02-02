@@ -9,6 +9,7 @@ import xarray as xr
 import datatree
 from s2cloudless import S2PixelCloudDetector
 import pickle
+import dask
 
 xr.set_options(keep_attrs=True)
 
@@ -22,8 +23,6 @@ class Sen12mscrtsDatasetManager:
     with open("sen12mscrts.yaml", 'r') as file:
         config = yaml.safe_load(file)
 
-    cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
-
     def __init__(
             self,
             root_dir,
@@ -36,6 +35,12 @@ class Sen12mscrtsDatasetManager:
         self.root_dir = root_dir
         self.cloud_masks_dir = cloud_masks_dir
         self.cloud_percentage_csv = cloud_percentage_csv
+
+        # create a dask.delayed function which can be applied on DataArrays to generate lazy cloud maps
+        # ensure that cloud detector is copied to dask graph only once, and not every time cloud map is computed
+        delayed_detector_class = dask.delayed(S2PixelCloudDetector)
+        delayed_detector_instance = delayed_detector_class(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
+        self.cloud_map_function = delayed_detector_instance.get_cloud_probability_maps
 
         self._data_found = []
         self._data = None
@@ -51,13 +56,12 @@ class Sen12mscrtsDatasetManager:
 
         self.find_and_read_files()
         self.build_tree()
-        self.merge_by_timestep()
 
-        print("Add cloud masks...")
-        self.add_cloud_masks()
-
-        print("Add cloud percentage...")
+        print("Add cloud maps and cloud percentages...")
+        self.add_cloud_maps()
         self.add_cloud_percentages()
+
+        self.merge_by_timestep()
 
         print("Done!")
 
@@ -113,26 +117,29 @@ class Sen12mscrtsDatasetManager:
                         )
                         del patch_tree.children
 
-    def add_cloud_masks(self):
-        self._data = self._data.map_over_subtree(self.add_cloud_mask)
+    def add_cloud_maps(self):
+        self._data = self._data.map_over_subtree(self.add_cloud_map)
 
-    @classmethod
-    def add_cloud_mask(cls, dataset) -> xr.Dataset:
+    def add_cloud_map(self, dataset):
 
+        # dataset could be a datatree.DatasetView, therefore we explicitly cast it to xr.Dataset
         dataset = (xr.Dataset)(dataset)
-        s2 = dataset["S2"]
-        s2 = s2.clip(min=0, max=10000, keep_attrs=True)
-        s2 = s2 / 10000
 
-        dataset["cloud_mask"] = xr.apply_ufunc(
-            cls.cloud_detector.get_cloud_probability_maps,
-            s2,
-            input_core_dims=[["lat", "lon", "band"]],
-            output_core_dims=[["lat", "lon"]],
-            exclude_dims=set(("band",)),
-            dask='parallelized',
-            output_dtypes=[s2.dtype]
+        delayed_cloud_map = self.cloud_map_function(dataset["S2"].data)
+
+        # prepare a placeholder array which will hold the cloud map
+        dataset["S2_cloud_map"] = dataset["S2"].isel(band=0).astype(float)
+
+        # delayed_cloud_map is a dask.Delayed object, not a true dask array
+        # therefore we need an ad-hoc conversion to dask array first
+        delayed_array = dask.array.from_delayed(
+            delayed_cloud_map,
+            dataset["S2_cloud_map"].shape,
+            dataset["S2_cloud_map"].dtype
         )
+
+        dataset["S2_cloud_map"].data = delayed_array
+
         return dataset
 
     def add_cloud_percentages(self):
@@ -141,7 +148,7 @@ class Sen12mscrtsDatasetManager:
     @classmethod
     def add_cloud_percentage(cls, dataset):
         dataset = (xr.Dataset)(dataset)
-        dataset["cloud_percentage"] = dataset["cloud_mask"].mean(dim=["lat", "lon"])
+        dataset["S2_cloud_percentage"] = dataset["S2_cloud_map"].mean(dim=["lat", "lon"])
         return dataset
 
     def save(self, filepath=None):
