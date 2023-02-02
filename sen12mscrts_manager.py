@@ -47,7 +47,8 @@ class Sen12mscrtsDatasetManager:
 
     def load_dataset(self):
 
-        self.find_and_read_files()
+        self.find_files()
+        self.read_files_lazily()
         self.build_tree()
         self.merge_by_timestep()
 
@@ -59,14 +60,14 @@ class Sen12mscrtsDatasetManager:
 
         print("Done!")
 
-    def find_and_read_files(self):
+    def find_files(self):
         """
         Creates a pd.DataFrame, finds all dataset files in root directory, and adds them to the dataframe
         :return:
         """
 
         n_files = sum([len(files) for r, d, files in os.walk(self.root_dir)])
-        with tqdm(total=n_files, desc="Load dataset files lazily") as pbar:
+        with tqdm(total=n_files, desc="Find dataset files") as pbar:
 
             for current_path, directories, filenames in os.walk(self.root_dir):
 
@@ -83,7 +84,14 @@ class Sen12mscrtsDatasetManager:
                         directory=current_path,
                         filename=filename
                     )
-                    self._data_found[image_reader.index_string] = image_reader.image
+                    self._data_found[image_reader.index_string] = image_reader
+
+    def read_files_lazily(self):
+        self._data_found = {
+            index: image_reader.image
+            for index, image_reader
+            in tqdm(self._data_found.items(), desc="Read files lazily")
+        }
 
     def build_tree(self):
 

@@ -28,10 +28,13 @@ class ImageReader:
 
         self.image_type = self._detect_image_type()
         self._index = self._detect_index()
-        self._image = self.read_lazy()
+        self._image = None
+        # self._image = self.read_lazy()
 
     @property
     def image(self):
+        if self._image is None:
+            self._image = self.read_lazy()
         return self._image
 
     @property
