@@ -6,6 +6,8 @@ import xarray as xr
 import rioxarray as rxr
 import warnings
 
+xr.set_options(keep_attrs=True)
+
 
 class ImageReader:
 

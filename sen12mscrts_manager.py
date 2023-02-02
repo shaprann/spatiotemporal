@@ -9,6 +9,8 @@ import xarray as xr
 import datatree
 from s2cloudless import S2PixelCloudDetector
 
+xr.set_options(keep_attrs=True)
+
 
 class Sen12mscrtsDatasetManager:
     """
