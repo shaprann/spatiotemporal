@@ -5,6 +5,9 @@ import warnings
 import yaml
 from image import ImageReader
 from tqdm import tqdm
+import xarray as xr
+import datatree
+from s2cloudless import S2PixelCloudDetector
 
 
 class Sen12mscrtsDatasetManager:
@@ -15,6 +18,8 @@ class Sen12mscrtsDatasetManager:
 
     with open("sen12mscrts.yaml", 'r') as file:
         config = yaml.safe_load(file)
+
+    cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
 
     def __init__(
             self,
@@ -27,6 +32,7 @@ class Sen12mscrtsDatasetManager:
         self.root_dir = root_dir
         self.cloud_masks_dir = cloud_masks_dir
         self.cloud_percentage_csv = cloud_percentage_csv
+
         self._data_found = {}
         self._data = None
 
@@ -45,7 +51,8 @@ class Sen12mscrtsDatasetManager:
         :return:
         """
 
-        with tqdm(total=sum([len(files) for r, d, files in os.walk(self.root_dir)])) as pbar:
+        n_files = sum([len(files) for r, d, files in os.walk(self.root_dir)])
+        with tqdm(total=n_files, desc="Load dataset files lazily") as pbar:
 
             for current_path, directories, filenames in os.walk(self.root_dir):
 
@@ -57,34 +64,70 @@ class Sen12mscrtsDatasetManager:
                     if not filename.endswith(".tif"):
                         continue
 
-                    image_reader = ImageReader(manager=self, dir_path=current_path, filename=filename)
+                    image_reader = ImageReader(
+                        manager=self,
+                        dir_path=current_path,
+                        filename=filename
+                    )
+                    self._data_found[image_reader.index_string] = image_reader.image
 
-                    if image_reader.index not in self._data_found:
-                        self._data_found[image_reader.index] = image_reader.image
-                    else:
-                        self._data_found[image_reader.index].update(image_reader.image)
+    def build_tree(self):
 
-        self.build_dataframe()
+        dt = datatree.DataTree(name="SEN12MS-CR-TS")
+        for index_string, image in tqdm(self._data_found.items(), desc="Add images to DataTree"):
+            dt[index_string] = image
+        self._data = dt
 
-    def build_dataframe(self):
+    # TODO: write a more pythonic function which follows sen12mscrts.yaml specifications
+    def merge_by_timestep(self):
 
-        # create an empty series
-        self._data = pd.Series(
-            index=pd.MultiIndex.from_tuples(self._data_found.keys(), names=self.config["dataset_index"]),
-            dtype="object"
+        # TODO: replace by len(self.leaves) in future versions of DataTree
+        n_items = len([node for node in self._data.subtree if node.is_leaf])
+
+        with tqdm(total=n_items, desc="Merge images over timestep") as pbar:
+
+            for roi, roi_tree in self._data.children.items():
+                for tile, tile_tree in roi_tree.children.items():
+                    for patch, patch_tree in tile_tree.children.items():
+                        pbar.update(len(patch_tree))
+                        patch_tree.ds = xr.combine_by_coords(
+                            [node.to_dataset() for node in patch_tree.values()],
+                            combine_attrs="drop_conflicts"
+                        )
+                        del patch_tree.children
+
+    def add_cloud_masks(self):
+        self._data = self._data.map_over_subtree(self.add_cloud_mask)
+
+    @classmethod
+    def add_cloud_mask(cls, dataset) -> xr.Dataset:
+
+        dataset = (xr.Dataset)(dataset)
+        s2 = dataset["S2"]
+        s2 = s2.clip(min=0, max=10000, keep_attrs=True)
+        s2 = s2 / 10000
+
+        dataset["cloud_mask"] = xr.apply_ufunc(
+            cls.cloud_detector.get_cloud_probability_maps,
+            s2,
+            input_core_dims=[["lat", "lon", "band"]],
+            output_core_dims=[["lat", "lon"]],
+            exclude_dims=set(("band",)),
+            dask='parallelized',
+            output_dtypes=[s2.dtype]
         )
+        return dataset
 
-        # manually fill with data, because pandas will not allow it otherwise
-        for index, image in self._data_found.items():
-            self._data.at[index] = image
+    def add_cloud_percentages(self):
+        self._data = self._data.map_over_subtree(self.add_cloud_percentage)
 
-        # sort
-        self._data = self._data.sort_index()
+    @classmethod
+    def add_cloud_percentage(cls, dataset):
+        dataset = (xr.Dataset)(dataset)
+        dataset["cloud_percentage"] = dataset["cloud_mask"].mean(dim=["lat", "lon"])
+        return dataset
 
-        # convert to dataframe
-        self._data = self._data.to_frame(name="xarray")
-
-    def add_paths_to_cloudmasks(self):
+    def add_path_to_cloudmask(self):
 
         if not self.cloud_masks_dir:
             warnings.warn("Unable to read or save cloud masks: path to cloud masks was not provided. ")
