@@ -50,7 +50,15 @@ class CTGANTorchDataset(Dataset):
     @classmethod
     def collate_fn(cls, list_of_samples: list, device):
         data = xr.concat(list_of_samples, dim="batch")
-        data.compute()
+        data = data.compute()
         return (
-            torch.from_numpy(data["S2"].values.astype(float)).to(device)
+            torch.from_numpy(data["S2"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_t-1"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_t-2"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_t-3"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_cloud_map"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_cloud_map_t-1"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_cloud_map_t-2"].values.astype(float)).to(device),
+            torch.from_numpy(data["S2_cloud_map_t-3"].values.astype(float)).to(device),
+            data["S2"]
         )
