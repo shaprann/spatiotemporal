@@ -91,14 +91,11 @@ class Sen12mscrtsDatasetManager:
                         filename=filename
                     )
                     self._data_found.append(image_reader)
-                    self._data_found[image_reader.index_string] = image_reader
 
     def read_files_lazily(self):
-        self._data_found = {
-            index: image_reader.image
-            for index, image_reader
-            in tqdm(self._data_found.items(), desc="Read files lazily")
-        }
+        for image_reader in tqdm(self._data_found, desc="Read files lazily"):
+            # this will trigger image reader to load the image and store the data
+            _ = image_reader.image
 
     def build_tree(self):
 
