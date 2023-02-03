@@ -45,6 +45,10 @@ class ImageReader:
     def index_string(self):
         return join(*[str(index_part) for index_part in self._index])
 
+    def load_lazy(self):
+        self._image = self.read_lazy()
+        return self
+
     def read_lazy(self):
 
         # TODO: rewrite hardcoded parts like timestep and patch assignment

@@ -28,7 +28,9 @@ class Sen12mscrtsDatasetManager:
             root_dir,
             cloud_masks_dir=None,
             cloud_percentage_csv=None,
-            cloud_percentage_buffer=None
+            cloud_percentage_buffer=None,
+            read_parallel=None,
+            dask_client=None
     ):
         if not isdir(root_dir):
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
@@ -41,6 +43,11 @@ class Sen12mscrtsDatasetManager:
         delayed_detector_class = dask.delayed(S2PixelCloudDetector)
         delayed_detector_instance = delayed_detector_class(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
         self.cloud_map_function = delayed_detector_instance.get_cloud_probability_maps
+
+        # create a dask.delayed image reader
+        self.delayed_image_reader = dask.delayed(ImageReader)
+        # pass manager (self) to dask as well
+        self.delayed_manager = dask.delayed(self)
 
         self._data_found = []
         self._data = None
@@ -85,17 +92,16 @@ class Sen12mscrtsDatasetManager:
                     if not filename.endswith(".tif"):
                         continue
 
-                    image_reader = ImageReader(
-                        manager=self,
+                    image_reader = self.delayed_image_reader(
+                        manager=self.delayed_manager,
                         directory=current_path,
                         filename=filename
                     )
+                    image_reader = image_reader.load_lazy()
                     self._data_found.append(image_reader)
 
     def read_files_lazily(self):
-        for image_reader in tqdm(self._data_found, desc="Read files lazily"):
-            # this will trigger image reader to load the image and store the data
-            _ = image_reader.image
+        self._data_found = dask.compute(self._data_found)[0]
 
     def build_tree(self):
 
