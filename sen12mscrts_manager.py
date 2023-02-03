@@ -125,7 +125,8 @@ class Sen12mscrtsDatasetManager:
         # dataset could be a datatree.DatasetView, therefore we explicitly cast it to xr.Dataset
         dataset = (xr.Dataset)(dataset)
 
-        delayed_cloud_map = self.cloud_map_function(dataset["S2"].data)
+        s2_data = dataset["S2"].data / 10000
+        delayed_cloud_map = self.cloud_map_function(s2_data)
 
         # prepare a placeholder array which will hold the cloud map
         dataset["S2_cloud_map"] = dataset["S2"].isel(band=0).astype(float)
