@@ -99,7 +99,7 @@ class Sen12mscrtsDatasetManager:
         self._data = dt
         self._data_found = []
 
-    # TODO: write a more pythonic function which follows sen12mscrts.yaml specifications
+    # The function is ugly, but it will do for now
     def merge_by_timestep(self):
 
         # TODO: replace by len(self.leaves) in future versions of DataTree
@@ -110,12 +110,31 @@ class Sen12mscrtsDatasetManager:
             for roi, roi_tree in self._data.children.items():
                 for tile, tile_tree in roi_tree.children.items():
                     for patch, patch_tree in tile_tree.children.items():
-                        pbar.update(len(patch_tree))
-                        patch_tree.ds = xr.combine_by_coords(
-                            [node.to_dataset() for node in patch_tree.values()],
-                            combine_attrs="drop_conflicts"
-                        )
-                        del patch_tree.children
+
+                        try:
+                            patch_tree.ds = xr.combine_by_coords(
+                                [node.to_dataset() for node in patch_tree.values()],
+                                combine_attrs="drop_conflicts"
+                            )
+
+                            pbar.update(len(patch_tree))
+
+                            del patch_tree.children
+
+                        except ValueError:
+                            pbar.write(f"Found faulty patch {patch} at {roi} in tile {tile}\n"
+                                       f"Remove tile {roi}/{tile} from the dataset entirely.")
+
+                            pbar.update(len(patch_tree) * len(tile_tree))
+
+                            # detach current tile subtree from the .data tree
+                            tile_tree.parent = None
+
+                            # release current tile subtree (just in case)
+                            del tile_tree
+
+                            # break from the patch loop. The tile loop will continue with the next tile
+                            break
 
     def add_cloud_maps(self):
         self._data = self._data.map_over_subtree(self.add_cloud_map)

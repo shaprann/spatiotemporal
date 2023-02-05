@@ -69,6 +69,7 @@ class ImageReader:
         # add timestep as dimension with coordinate
         lazy_image = lazy_image.expand_dims({"timestep": [self.metadata["timestep"]]})
 
+        # TODO: this causes a bug: since filepath etc. is a coordinate, it is set to be the same for S1 and S2 images
         # add date, filepath, filename, and directory as coordinates which depend on timestep
         lazy_image = lazy_image.assign_coords(
             {
