@@ -12,8 +12,11 @@ class CTGANTorchDataset(Dataset):
         self.device = device
         self.samples = []
         for datatree_node in tqdm(dataset_manager.data.leaves, desc="Converting dataset to training samples"):
-            for sample in self.xr_dataset_to_samples(datatree_node.ds):
-                self.samples.append(sample)
+            try:
+                node_samples = self.xr_dataset_to_samples(datatree_node.ds)
+                self.samples = self.samples + node_samples
+            except ValueError:
+                print(f"Could not transform dataset {datatree_node.path} to training samples.")
 
     def __len__(self):
         return len(self.samples)
@@ -24,25 +27,29 @@ class CTGANTorchDataset(Dataset):
     @classmethod
     def xr_dataset_to_samples(cls, dataset):
 
-        dataset = (xr.Dataset)(dataset).drop_vars("S1")
+        try:
+            dataset = (xr.Dataset)(dataset).drop_vars("S1")
 
-        # switch to image coordinates instead of lat, lon
-        dataset = dataset.swap_dims({"lat": "y", "lon": "x"})
+            # switch to image coordinates instead of lat, lon
+            dataset = dataset.swap_dims({"lat": "y", "lon": "x"})
 
-        dataset["S2_t-1"] = dataset["S2"].shift(timestep=+1)
-        dataset["S2_t-2"] = dataset["S2"].shift(timestep=+2)
-        dataset["S2_t-3"] = dataset["S2"].shift(timestep=+3)
+            dataset["S2_t-1"] = dataset["S2"].shift(timestep=+1)
+            dataset["S2_t-2"] = dataset["S2"].shift(timestep=+2)
+            dataset["S2_t-3"] = dataset["S2"].shift(timestep=+3)
 
-        dataset["S2_cloud_map_t-1"] = dataset["S2_cloud_map"].shift(timestep=+1)
-        dataset["S2_cloud_map_t-2"] = dataset["S2_cloud_map"].shift(timestep=-2)
-        dataset["S2_cloud_map_t-3"] = dataset["S2_cloud_map"].shift(timestep=-3)
+            dataset["S2_cloud_map_t-1"] = dataset["S2_cloud_map"].shift(timestep=+1)
+            dataset["S2_cloud_map_t-2"] = dataset["S2_cloud_map"].shift(timestep=-2)
+            dataset["S2_cloud_map_t-3"] = dataset["S2_cloud_map"].shift(timestep=-3)
 
-        dataset = dataset.isel(timestep=slice(3, 30))
+            dataset = dataset.isel(timestep=slice(3, 30))
 
-        dataset = dataset.drop_dims("polarization")
+            dataset = dataset.drop_dims("polarization")
 
-        # split by timestep using groupby(), remove timestep from resulting tuple
-        return [ds for timestep, ds in list(dataset.groupby("timestep"))]
+            # split by timestep using groupby(), remove timestep from resulting tuple
+            return [ds for timestep, ds in list(dataset.groupby("timestep"))]
+
+        except ValueError:
+            print(f"Could not process dataset {dataset}")
 
     def get_collate_fn(self):
         return partial(self.collate_fn, device=self.device)
