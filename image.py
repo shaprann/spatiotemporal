@@ -36,6 +36,10 @@ class ImageReader:
     def index(self):
         return self._index
 
+    @property
+    def optical(self):
+        return True if self.image_type == "S2" else False
+
     def read_lazy(self):
         """Deprecated"""
 
@@ -156,3 +160,51 @@ class ImageReader:
 
     def _detect_index(self):
         return tuple(self.metadata[index_level] for index_level in self.manager.config['dataset_index'])
+
+    def check_cloud_map_prerequisites(self):
+
+        if not self.optical:
+            raise ValueError(f"Can only generate cloud maps for optical images. Got instead: {self.image_type}")
+
+        if not self.manager.cloud_maps_dir:
+            raise ValueError("Unable to read or save cloud maps: path to cloud maps was not provided.")
+
+        if not isdir(self.manager.cloud_maps_dir):
+            raise ValueError(f"Unable to read or save cloud maps. "
+                             f"{self.manager.cloud_maps_dir} is not a valid directory.")
+
+    @property
+    def cloud_map_index(self):
+        self.check_cloud_map_prerequisites()
+        index = list(self._index)
+        index[-1] = "S2_cloud_map"
+        return tuple(index)
+
+    @property
+    def path_to_cloud_map(self):
+        self.check_cloud_map_prerequisites()
+
+        # here we use string join
+        filename_content = [
+            "s2cloudmap",
+            self.metadata["ROI"],
+            self.metadata["tile"],
+            "ImgNo",
+            self.metadata["timestep"],
+            self.metadata["date"],
+            "patch",
+            self.metadata["patch"]
+        ]
+        filename = "_".join([str(value) for value in filename_content]) + ".tif"
+
+        # here we use os.path.join
+        directory_path_content = [
+            self.manager.cloud_maps_dir,
+            self.metadata["ROI"],
+            self.metadata["tile"],
+            self.metadata["modality"],
+            self.metadata["timestep"]
+        ]
+        directory = join(*[str(value) for value in directory_path_content])
+
+        return join(directory, filename)

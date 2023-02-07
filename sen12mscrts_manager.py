@@ -66,6 +66,11 @@ class Sen12mscrtsDatasetManager:
 
                     self._files[image_reader.index] = image_reader.filepath
 
+                    # add path to cloud map if applicable
+                    # if no .tif image is present at that path, it will be used as target path to generate cloud map
+                    if self.cloud_maps_dir and image_reader.optical:
+                        self._files[image_reader.cloud_map_index] = image_reader.path_to_cloud_map
+
     def build_dataframe(self):
 
         # put filenames into a pd.Series
@@ -80,44 +85,3 @@ class Sen12mscrtsDatasetManager:
 
         # put modality into columns (creates a pd.DataFrame
         self._data = self._data.unstack("modality")
-
-    def add_paths_to_cloudmasks(self):
-        """Deprecated! Do not use"""
-
-        if not self.cloud_masks_dir:
-            warnings.warn("Unable to read or save cloud masks: path to cloud masks was not provided. ")
-            return
-
-        if not isdir(self.cloud_masks_dir):
-            warnings.warn(f"Unable to read or save cloud masks. {self.cloud_masks_dir} is not a valid directory.")
-            return
-
-        self._data["S2_cloudmask_filename"] = (
-            "s2cloudmask_"
-            + self._data.index.get_level_values("ROI")
-            + "_"
-            + self._data.index.get_level_values("tile").astype(str)
-            + "_ImgNo_"
-            + self._data.index.get_level_values("timestep").astype(str)
-            + "_"
-            + self._data["S2_date"]
-            + "_patch_"
-            + self._data.index.get_level_values("patch").astype(str)
-            + ".tif"
-        )
-
-        self._data["S2_cloudmask_abspath"] = (
-            self.cloud_masks_dir
-            + os.sep
-            + self._data.index.get_level_values("ROI").astype(str)
-            + os.sep
-            + self._data.index.get_level_values("tile").astype(str)
-            + os.sep
-            + "S2"
-            + os.sep
-            + self._data.index.get_level_values("timestep").astype(str)
-            + os.sep
-            + self._data["S2_cloudmask_filename"]
-        )
-
-        self._data["S2_cloudmask_exists"] = self._data["S2_cloudmask_abspath"].map(isfile)
