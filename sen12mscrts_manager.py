@@ -19,16 +19,16 @@ class Sen12mscrtsDatasetManager:
     def __init__(
             self,
             root_dir,
-            cloud_masks_dir=None,
+            cloud_maps_dir=None,
             cloud_percentage_csv=None,
             cloud_percentage_buffer=None
     ):
         if not isdir(root_dir):
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
         self.root_dir = root_dir
-        self.cloud_masks_dir = cloud_masks_dir
+        self.cloud_maps_dir = cloud_maps_dir
         self.cloud_percentage_csv = cloud_percentage_csv
-        self._data_found = {}
+        self._files = {}
         self._data = None
 
         # self.load_dataset()
@@ -41,6 +41,10 @@ class Sen12mscrtsDatasetManager:
         return self._data
 
     def load_dataset(self):
+        self.get_paths_to_files()
+        self.build_dataframe()
+
+    def get_paths_to_files(self):
         """
         Creates a pd.DataFrame, finds all dataset files in root directory, and adds them to the dataframe
         :return:
@@ -58,16 +62,16 @@ class Sen12mscrtsDatasetManager:
                     if not filename.endswith(".tif"):
                         continue
 
-                    image_reader = ImageReader(manager=self, dir_path=current_path, filename=filename)
+                    image_reader = ImageReader(manager=self, directory=current_path, filename=filename)
 
-                    self._data_found[image_reader.index] = image_reader.path
+                    self._files[image_reader.index] = image_reader.filepath
 
     def build_dataframe(self):
 
         # put filenames into a pd.Series
         self._data = pd.Series(
-            index=pd.MultiIndex.from_tuples(self._data_found.keys(), names=self.config["dataset_index"]),
-            data=self._data_found.values(),
+            index=pd.MultiIndex.from_tuples(self._files.keys(), names=self.config["dataset_index"]),
+            data=self._files.values(),
             dtype="object"
         )
 
@@ -78,6 +82,7 @@ class Sen12mscrtsDatasetManager:
         self._data = self._data.unstack("modality")
 
     def add_paths_to_cloudmasks(self):
+        """Deprecated! Do not use"""
 
         if not self.cloud_masks_dir:
             warnings.warn("Unable to read or save cloud masks: path to cloud masks was not provided. ")

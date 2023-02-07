@@ -1,7 +1,7 @@
 import os
 import rasterio
 import numpy as np
-from os.path import split, relpath, isfile, join
+from os.path import split, relpath, isfile, isdir, join
 import xarray as xr
 import rioxarray as rxr
 import warnings
@@ -12,12 +12,12 @@ class ImageReader:
     def __init__(
             self,
             manager,
-            image_path=None,
-            dir_path=None,
+            filepath=None,
+            directory=None,
             filename=None
     ):
         self.manager = manager
-        self.path, self.dir_path, self.filename = self._handle_paths(image_path, dir_path, filename)
+        self.filepath, self.directory, self.filename = self._handle_paths(filepath, directory, filename)
 
         self.filename_metadata = self._parse_filename()
         self.filepath_metadata = self._parse_file_location()
@@ -42,7 +42,7 @@ class ImageReader:
         # TODO: rewrite hardcoded parts like timestep and patch assignment
 
         # read as dask array
-        lazy_image = rxr.open_rasterio(self.path, cache=False, chunks={})
+        lazy_image = rxr.open_rasterio(self.filepath, cache=False, chunks={})
 
         # rename DataArray
         lazy_image = lazy_image.rename(self.image_type)
@@ -79,14 +79,14 @@ class ImageReader:
         return lazy_image
 
     @classmethod
-    def _handle_paths(cls, image_path, dir_path, filename):
-        if image_path:
-            dir_path, filename = split(image_path)
-        elif dir_path and filename:
-            image_path = join(dir_path, filename)
+    def _handle_paths(cls, filepath, directory, filename):
+        if filepath:
+            directory, filename = split(filepath)
+        elif directory and filename:
+            filepath = join(directory, filename)
         else:
             raise ValueError("Either a full image path or a combimation of folder and filename must be provided")
-        return image_path, dir_path, filename
+        return filepath, directory, filename
 
     def _parse_filename(self):
         """
@@ -116,22 +116,22 @@ class ImageReader:
     def _parse_file_location(self):
         """
         Reads information which is given by file location, i.e. hierarchy of folders where file is stored.
-        :param str dir_path: full path to folder where the file is stored, without filename itself. Example:
+        :param str directory: full path to folder where the file is stored, without filename itself. Example:
             "/media/vlad/Extreme SSD/Datasets/Cloud_removal/SEN12MS-CR-TS/test/asiaWest_test/ROIs1868/100/S2/9"
         :return: dictionary with values. Example:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
         """
 
-        if not self.dir_path.startswith(self.manager.root_dir):
-            raise ValueError(f"Expected a path from root directory. Received instead: {self.dir_path}")
+        if not self.directory.startswith(self.manager.root_dir):
+            raise ValueError(f"Expected a path from root directory. Received instead: {self.directory}")
 
         # convert to relative path (removes root_dir from the path)
-        dir_path = relpath(self.dir_path, self.manager.root_dir)
+        directory = relpath(self.directory, self.manager.root_dir)
 
         try:
-            roi, tile, modality, timestep = dir_path.split(os.sep)
+            roi, tile, modality, timestep = directory.split(os.sep)
         except ValueError as err:
-            raise ValueError(f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {dir_path}")
+            raise ValueError(f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {directory}")
 
         return dict(zip(
             self.manager.config['hierarchy_in_storage'],
