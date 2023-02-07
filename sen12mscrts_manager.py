@@ -3,8 +3,9 @@ import os
 from os.path import join, isfile, isdir
 import warnings
 import yaml
-from image import ImageReader
+from image import ImageFile
 from tqdm import tqdm
+import rasterio
 
 
 class Sen12mscrtsDatasetManager:
@@ -62,14 +63,14 @@ class Sen12mscrtsDatasetManager:
                     if not filename.endswith(".tif"):
                         continue
 
-                    image_reader = ImageReader(manager=self, directory=current_path, filename=filename)
+                    image_file = ImageFile(manager=self, directory=current_path, filename=filename)
 
-                    self._files[image_reader.index] = image_reader.filepath
+                    self._files[image_file.index] = image_file.filepath
 
                     # add path to cloud map if applicable
                     # if no .tif image is present at that path, it will be used as target path to generate cloud map
-                    if self.cloud_maps_dir and image_reader.optical:
-                        self._files[image_reader.cloud_map_index] = image_reader.path_to_cloud_map
+                    if self.cloud_maps_dir and image_file.optical:
+                        self._files[image_file.cloud_map_index] = image_file.path_to_cloud_map
 
     def build_dataframe(self):
 
