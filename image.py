@@ -26,7 +26,7 @@ class ImageReader:
 
         self.image_type = self._detect_image_type()
         self._index = self._detect_index()
-        self._image = self.read_lazy()
+        self._image = None
 
     @property
     def image(self):
@@ -37,6 +37,7 @@ class ImageReader:
         return self._index
 
     def read_lazy(self):
+        """Deprecated"""
 
         # TODO: rewrite hardcoded parts like timestep and patch assignment
 

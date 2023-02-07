@@ -60,30 +60,22 @@ class Sen12mscrtsDatasetManager:
 
                     image_reader = ImageReader(manager=self, dir_path=current_path, filename=filename)
 
-                    if image_reader.index not in self._data_found:
-                        self._data_found[image_reader.index] = image_reader.image
-                    else:
-                        self._data_found[image_reader.index].update(image_reader.image)
-
-        self.build_dataframe()
+                    self._data_found[image_reader.index] = image_reader.path
 
     def build_dataframe(self):
 
-        # create an empty series
+        # put filenames into a pd.Series
         self._data = pd.Series(
             index=pd.MultiIndex.from_tuples(self._data_found.keys(), names=self.config["dataset_index"]),
+            data=self._data_found.values(),
             dtype="object"
         )
-
-        # manually fill with data, because pandas will not allow it otherwise
-        for index, image in self._data_found.items():
-            self._data.at[index] = image
 
         # sort
         self._data = self._data.sort_index()
 
-        # convert to dataframe
-        self._data = self._data.to_frame(name="xarray")
+        # put modality into columns (creates a pd.DataFrame
+        self._data = self._data.unstack("modality")
 
     def add_paths_to_cloudmasks(self):
 
