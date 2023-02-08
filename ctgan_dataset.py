@@ -9,6 +9,9 @@ class CTGANTorchDataset(Dataset):
     def __init__(self, dataset_manager, device):
 
         self.device = device
+        if not dataset_manager.has_cloud_maps:
+            raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
+                             "Check whether path to cloud maps directory has been provided to dataset manager.")
         self.manager = dataset_manager
 
         self.data = self.manager.data.copy()
