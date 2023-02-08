@@ -17,7 +17,8 @@ class Sen12mscrtsDatasetManager:
     Registry is stored as a MultiIndex pd.DataFrame under the .registry variable.
     """
 
-    with open("sen12mscrts.yaml", 'r') as file:
+    project_directory = os.path.abspath(os.path.dirname(__file__))
+    with open(join(project_directory, "sen12mscrts.yaml"), 'r') as file:
         config = yaml.safe_load(file)
 
     def __init__(
