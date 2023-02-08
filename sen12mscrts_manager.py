@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import os
 from os.path import join, isfile, isdir
@@ -6,6 +7,8 @@ import yaml
 from image import ImageFile
 from tqdm import tqdm
 import rasterio
+from rasterio import RasterioIOError
+from s2cloudless import S2PixelCloudDetector
 
 
 class Sen12mscrtsDatasetManager:
@@ -31,6 +34,8 @@ class Sen12mscrtsDatasetManager:
         self.cloud_percentage_csv = cloud_percentage_csv
         self._files = {}
         self._data = None
+
+        self.cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
 
         # self.load_dataset()
         # self.load_cloudmasks()
@@ -86,3 +91,22 @@ class Sen12mscrtsDatasetManager:
 
         # put modality into columns (creates a pd.DataFrame
         self._data = self._data.unstack("modality")
+
+    @staticmethod
+    def read_tif(filepath):
+        return rasterio.open(filepath).read()
+
+    def get_cloud_map(self, cloud_map_path, s2_image):
+
+        threshold = 0.5
+
+        try:
+            return self.read_tif(cloud_map_path)
+
+        except RasterioIOError:
+            if type(s2_image) is str:
+                s2_image = self.read_tif(s2_image)
+            cloud_map = self.cloud_detector.get_cloud_probability_maps(s2_image)
+            cloud_map = cloud_map[np.newaxis, ...]
+            cloud_map[cloud_map < threshold] = 0
+            return cloud_map
