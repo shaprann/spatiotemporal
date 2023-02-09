@@ -67,18 +67,19 @@ class CTGANTorchDataset(Dataset):
         return {
             "index":                index,
             "original_s2_image":    original_s2_image,
-            "target_image":         torch.from_numpy(target_image).to(self.device),
+            "target_image":         torch.from_numpy(target_image),
             "inputs":               [
-                                        torch.from_numpy(s2_image).to(self.device)
+                                        torch.from_numpy(s2_image)
                                         for s2_image in input_images
                                     ],
             "input_cloud_maps":     [
-                                        torch.from_numpy(cloud_map).to(self.device)
+                                        torch.from_numpy(cloud_map)
                                         for cloud_map in input_cloud_maps
                                     ],
             "cloud_percentage":     cloud_percentage
         }
 
+    @staticmethod
     def collate_fn(self, list_of_samples):
 
         result = {
