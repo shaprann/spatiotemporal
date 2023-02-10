@@ -1,6 +1,10 @@
+from abc import ABC
+
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 import numpy as np
+import math
+
 
 class CTGANTorchDataset(Dataset):
 
@@ -134,3 +138,47 @@ class CTGANTorchDataset(Dataset):
     def rescale_back(s2_image):
         return np.round(s2_image * 10000).astype('uint16')
 
+
+class CTGANTorchIterableDataset(IterableDataset):
+
+    def __init__(self, dataset_manager, device, mode=None, cloud_threshold=0.05):
+
+        self.cloud_threshold = cloud_threshold
+        self.map_dataset = CTGANTorchDataset(dataset_manager, device, mode=mode)
+        self.collate_fn = self.map_dataset.collate_fn
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        permutation = np.random.permutation(len(self.map_dataset))
+
+        if worker_info is None:
+            iter_start = 0
+            iter_end = len(self.map_dataset)
+        else:
+            per_worker = int(math.ceil(len(self.map_dataset) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = worker_id * per_worker
+            iter_end = min(iter_start + per_worker, len(self.map_dataset))
+
+        self.worker_permutation = permutation[iter_start:iter_end]
+        self.current_iteration = 0
+
+        return self
+
+    def __next__(self):
+
+        worker_info = torch.utils.data.get_worker_info()
+
+        try:
+            idx = self.worker_permutation[self.current_iteration]
+        except IndexError:
+            raise StopIteration
+
+        sample = self.map_dataset[idx]
+
+        self.current_iteration += 1
+
+        if sample["cloud_percentage"] < self.cloud_threshold:
+            return sample
+        else:
+            return self.__next__()
