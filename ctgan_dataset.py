@@ -167,8 +167,6 @@ class CTGANTorchIterableDataset(IterableDataset):
 
     def __next__(self):
 
-        worker_info = torch.utils.data.get_worker_info()
-
         try:
             idx = self.worker_permutation[self.current_iteration]
         except IndexError:
@@ -182,3 +180,6 @@ class CTGANTorchIterableDataset(IterableDataset):
             return sample
         else:
             return self.__next__()
+
+    def __len__(self):
+        return len(self.map_dataset)
