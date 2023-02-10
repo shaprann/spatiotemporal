@@ -10,6 +10,7 @@ import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from scipy.ndimage import gaussian_filter
+import pandas as pd
 
 
 class Sen12mscrtsDatasetManager:
@@ -18,9 +19,13 @@ class Sen12mscrtsDatasetManager:
     Registry is stored as a MultiIndex pd.DataFrame under the .registry variable.
     """
 
+    # load class config file
     project_directory = os.path.abspath(os.path.dirname(__file__))
     with open(join(project_directory, "sen12mscrts.yaml"), 'r') as file:
         config = yaml.safe_load(file)
+
+    # load definition of data subsets (regions and test/val splits)
+    subsets = pd.read_csv(join(project_directory, "subsets.csv"), index_col=["ROI", "tile"])
 
     def __init__(
             self,
@@ -117,3 +122,22 @@ class Sen12mscrtsDatasetManager:
             cloud_map[cloud_map < threshold] = 0
             cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
             return cloud_map
+
+    def data_subset(self, split=None, only_resampled=True):
+
+        subset = self.subsets[self.subsets["split"] == split]
+
+        if only_resampled:
+            subset = subset[subset["resampled"] == True]
+
+        index_tuples = [index_tuple for index_tuple in subset.index]
+
+        iloc_indices = []
+        for index_tuple in index_tuples:
+            try:
+                iloc_indices.append(self.data.index.get_locs(index_tuple))
+            except KeyError:
+                continue
+        indices = np.concatenate(iloc_indices) if iloc_indices else []
+
+        return self.data.iloc[indices]

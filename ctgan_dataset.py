@@ -6,15 +6,25 @@ class CTGANTorchDataset(Dataset):
 
     bands = [3, 2, 1, 7]  # [red, green, blue, NIR]
 
-    def __init__(self, dataset_manager, device):
+    def __init__(self, dataset_manager, device, mode=None):
 
-        self.device = device
         if not dataset_manager.has_cloud_maps:
             raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
                              "Check whether path to cloud maps directory has been provided to dataset manager.")
-        self.manager = dataset_manager
 
-        self.data = self.manager.data.copy()
+        if mode is not None and mode not in ["train", "test", "val"]:
+            raise ValueError(f"Incorrect mode provided. "
+                             f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
+
+        self.manager = dataset_manager
+        self.device = device
+        self.mode = mode
+
+        if mode is None:
+            self.data = self.manager.data.copy()
+        else:
+            self.data = self.manager.data_subset(split=mode).copy()
+
         self.data = self.data.drop("S1", axis=1)
 
         self.data["S2_t-1"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(1)
