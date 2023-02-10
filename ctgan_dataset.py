@@ -90,7 +90,7 @@ class CTGANTorchDataset(Dataset):
         }
 
     @staticmethod
-    def collate_fn(self, list_of_samples):
+    def collate_fn(list_of_samples):
 
         result = {
             "index": [],
