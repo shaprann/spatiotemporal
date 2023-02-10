@@ -9,6 +9,7 @@ from tqdm import tqdm
 import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
+from scipy.ndimage import gaussian_filter
 
 
 class Sen12mscrtsDatasetManager:
@@ -114,4 +115,5 @@ class Sen12mscrtsDatasetManager:
             cloud_map = self.cloud_detector.get_cloud_probability_maps(s2_image)
             cloud_map = cloud_map[np.newaxis, ...]
             cloud_map[cloud_map < threshold] = 0
+            cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
             return cloud_map
