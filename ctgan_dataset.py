@@ -12,6 +12,15 @@ class CTGANTorchDataset(Dataset):
 
     def __init__(self, dataset_manager, mode=None):
 
+        self._check_init_arguments(dataset_manager, mode)
+        self.manager = dataset_manager
+        self.mode = mode
+        self.data = self.manager.data_subset(split=mode).copy()
+        self._prepare_data()
+
+    @staticmethod
+    def _check_init_arguments(dataset_manager, mode):
+
         if not dataset_manager.has_cloud_maps:
             raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
                              "Check whether path to cloud maps directory has been provided to dataset manager.")
@@ -20,19 +29,14 @@ class CTGANTorchDataset(Dataset):
             raise ValueError(f"Incorrect mode provided. "
                              f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
 
-        self.manager = dataset_manager
-        self.mode = mode
-
-        if mode is None:
-            self.data = self.manager.data.copy()
-        else:
-            self.data = self.manager.data_subset(split=mode).copy()
+    def _prepare_data(self):
 
         self.data = self.data.drop("S1", axis=1)
 
         self.data["S2_t-1"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(1)
         self.data["S2_t-2"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(2)
         self.data["S2_t-3"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(3)
+
         self.data["S2CLOUDMAP_t-1"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(1)
         self.data["S2CLOUDMAP_t-2"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(2)
         self.data["S2CLOUDMAP_t-3"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(3)
@@ -137,6 +141,16 @@ class MinimalTorchDataset(Dataset):
 
     def __init__(self, dataset_manager, mode=None):
 
+        self._check_init_arguments(dataset_manager, mode)
+        self.manager = dataset_manager
+        self.mode = mode
+        self.data = self.manager.data_subset(split=mode).copy()
+
+        self.data = self.data.drop("S1", axis=1)
+
+    @staticmethod
+    def _check_init_arguments(dataset_manager, mode):
+
         if not dataset_manager.has_cloud_maps:
             raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
                              "Check whether path to cloud maps directory has been provided to dataset manager.")
@@ -144,16 +158,6 @@ class MinimalTorchDataset(Dataset):
         if mode is not None and mode not in ["train", "test", "val"]:
             raise ValueError(f"Incorrect mode provided. "
                              f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
-
-        self.manager = dataset_manager
-        self.mode = mode
-
-        if mode is None:
-            self.data = self.manager.data.copy()
-        else:
-            self.data = self.manager.data_subset(split=mode).copy()
-
-        self.data = self.data.drop("S1", axis=1)
 
     def __len__(self):
         return len(self.data)

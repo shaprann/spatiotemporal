@@ -39,6 +39,7 @@ class Sen12mscrtsDatasetManager:
         self.root_dir = root_dir
         self.cloud_maps_dir = cloud_maps_dir
         self.cloud_percentage_csv = cloud_percentage_csv
+
         self._files = {}
         self._data = None
 
@@ -122,7 +123,10 @@ class Sen12mscrtsDatasetManager:
 
     def data_subset(self, split=None, only_resampled=True):
 
-        subset = self.subsets[self.subsets["split"] == split]
+        if split is not None:
+            subset = self.subsets[self.subsets["split"] == split]
+        else:
+            subset = self.subsets
 
         if only_resampled:
             subset = subset[subset["resampled"] == True]
