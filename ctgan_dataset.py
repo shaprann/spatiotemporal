@@ -57,23 +57,29 @@ class CTGANTorchDataset(Dataset):
         ]
 
         input_cloud_maps = [
-            self.manager.get_cloud_map(cloud_map_path=sample["S2_cloud_map_t-1"],
-                                       s2_image=self.rescale(self.bands_last(original_input_images[0]))),
-            self.manager.get_cloud_map(cloud_map_path=sample["S2_cloud_map_t-2"],
-                                       s2_image=self.rescale(self.bands_last(original_input_images[1]))),
-            self.manager.get_cloud_map(cloud_map_path=sample["S2_cloud_map_t-3"],
-                                       s2_image=self.rescale(self.bands_last(original_input_images[2])))
+            self.manager.get_cloud_map(
+                cloud_map_path=sample["S2_cloud_map_t-1"],
+                s2_image=self.manager.rescale_s2(self.manager.bands_last(original_input_images[0]))
+            ),
+            self.manager.get_cloud_map(
+                cloud_map_path=sample["S2_cloud_map_t-2"],
+                s2_image=self.manager.rescale_s2(self.manager.bands_last(original_input_images[1]))
+            ),
+            self.manager.get_cloud_map(
+                cloud_map_path=sample["S2_cloud_map_t-3"],
+                s2_image=self.manager.rescale_s2(self.manager.bands_last(original_input_images[2]))
+            )
         ]
 
         input_images = [
-            self.rescale(image[self.bands]) for image in original_input_images
+            self.manager.rescale_s2(image[self.bands]) for image in original_input_images
         ]
 
-        target_image = self.rescale(original_s2_image[self.bands])
+        target_image = self.manager.rescale_s2(original_s2_image[self.bands])
 
         cloud_percentage = self.manager.get_cloud_map(
             cloud_map_path=sample["S2_cloud_map"],
-            s2_image=self.rescale(self.bands_last(original_s2_image))
+            s2_image=self.manager.rescale_s2(self.manager.bands_last(original_s2_image))
         ).mean()
 
         return {
@@ -124,18 +130,6 @@ class CTGANTorchDataset(Dataset):
 
         return result
 
-    @staticmethod
-    def bands_last(s2_image):
-        return np.transpose(s2_image, (1, 2, 0))
-
-    @staticmethod
-    def rescale(s2_image):
-        return s2_image.clip(0, 10000) / 10000
-
-    @staticmethod
-    def rescale_back(s2_image):
-        return np.round(s2_image * 10000).astype('uint16')
-
 
 class MinimalTorchDataset(Dataset):
 
@@ -173,7 +167,7 @@ class MinimalTorchDataset(Dataset):
 
         cloud_map = self.manager.get_cloud_map(
             cloud_map_path=sample["S2_cloud_map"],
-            s2_image=self.rescale(self.bands_last(original_s2_image))
+            s2_image=self.manager.rescale_s2(self.manager.bands_last(original_s2_image))
         )
 
         cloud_percentage = cloud_map.mean()
@@ -204,18 +198,6 @@ class MinimalTorchDataset(Dataset):
         result["cloud_map"] = np.stack(result["cloud_map"])
 
         return result
-
-    @staticmethod
-    def bands_last(s2_image):
-        return np.transpose(s2_image, (1, 2, 0))
-
-    @staticmethod
-    def rescale(s2_image):
-        return s2_image.clip(0, 10000) / 10000
-
-    @staticmethod
-    def rescale_back(s2_image):
-        return np.round(s2_image * 10000).astype('uint16')
 
 
 class CTGANTorchIterableDataset(IterableDataset):
