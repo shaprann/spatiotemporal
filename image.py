@@ -40,6 +40,10 @@ class ImageFile:
     def optical(self):
         return True if self.image_type == "S2" else False
 
+    @property
+    def cloud_map(self):
+        return True if self.image_type == "S2CLOUDMAP" else False
+
     @classmethod
     def _handle_paths(cls, filepath, directory, filename):
         if filepath:
@@ -121,6 +125,9 @@ class ImageFile:
 
     def check_cloud_map_prerequisites(self):
 
+        if self.cloud_map:
+            return
+
         if not self.optical:
             raise ValueError(f"Can only generate cloud maps for optical images. Got instead: {self.image_type}")
 
@@ -133,14 +140,17 @@ class ImageFile:
 
     @property
     def cloud_map_index(self):
-        self.check_cloud_map_prerequisites()
         index = list(self._index)
-        index[-1] = "S2_cloud_map"
+        index[-1] = "S2CLOUDMAP"
         return tuple(index)
 
     @property
     def path_to_cloud_map(self):
+
         self.check_cloud_map_prerequisites()
+
+        if self.cloud_map:
+            return self.filepath
 
         # here we use string join
         filename_content = [
@@ -160,7 +170,7 @@ class ImageFile:
             self.manager.cloud_maps_dir,
             self.metadata["ROI"],
             self.metadata["tile"],
-            self.metadata["modality"],
+            "S2CLOUDMAP",
             self.metadata["timestep"]
         ]
         directory = join(*[str(value) for value in directory_path_content])

@@ -33,9 +33,9 @@ class CTGANTorchDataset(Dataset):
         self.data["S2_t-1"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(1)
         self.data["S2_t-2"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(2)
         self.data["S2_t-3"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(3)
-        self.data["S2_cloud_map_t-1"] = self.data["S2_cloud_map"].groupby(level=["ROI", "tile", "patch"]).shift(1)
-        self.data["S2_cloud_map_t-2"] = self.data["S2_cloud_map"].groupby(level=["ROI", "tile", "patch"]).shift(2)
-        self.data["S2_cloud_map_t-3"] = self.data["S2_cloud_map"].groupby(level=["ROI", "tile", "patch"]).shift(3)
+        self.data["S2CLOUDMAP_t-1"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(1)
+        self.data["S2CLOUDMAP_t-2"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(2)
+        self.data["S2CLOUDMAP_t-3"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(3)
 
         self.data = self.data.dropna(how="any")
 
@@ -58,15 +58,15 @@ class CTGANTorchDataset(Dataset):
 
         input_cloud_maps = [
             self.manager.get_cloud_map(
-                cloud_map_path=sample["S2_cloud_map_t-1"],
+                cloud_map_path=sample["S2CLOUDMAP_t-1"],
                 s2_image=self.manager.prepare_for_cloud_detector(original_input_images[0])
             ),
             self.manager.get_cloud_map(
-                cloud_map_path=sample["S2_cloud_map_t-2"],
+                cloud_map_path=sample["S2CLOUDMAP_t-2"],
                 s2_image=self.manager.prepare_for_cloud_detector(original_input_images[1])
             ),
             self.manager.get_cloud_map(
-                cloud_map_path=sample["S2_cloud_map_t-3"],
+                cloud_map_path=sample["S2CLOUDMAP_t-3"],
                 s2_image=self.manager.prepare_for_cloud_detector(original_input_images[2])
             )
         ]
@@ -78,7 +78,7 @@ class CTGANTorchDataset(Dataset):
         target_image = self.manager.rescale_s2(original_s2_image)[self.bands]
 
         cloud_percentage = self.manager.get_cloud_map(
-            cloud_map_path=sample["S2_cloud_map"],
+            cloud_map_path=sample["S2CLOUDMAP"],
             s2_image=self.manager.prepare_for_cloud_detector(original_s2_image)
         ).mean()
 
@@ -166,7 +166,7 @@ class MinimalTorchDataset(Dataset):
         original_s2_image = self.manager.read_tif(sample["S2"])
 
         cloud_map = self.manager.get_cloud_map(
-            cloud_map_path=sample["S2_cloud_map"],
+            cloud_map_path=sample["S2CLOUDMAP"],
             s2_image=self.manager.prepare_for_cloud_detector(original_s2_image)
         )
 

@@ -55,7 +55,7 @@ class Sen12mscrtsDatasetManager:
 
     @property
     def has_cloud_maps(self):
-        return self._data is not None and "S2_cloud_map" in self._data
+        return self._data is not None and "S2CLOUDMAP" in self._data
 
     def load_dataset(self):
         self.get_paths_to_files()
