@@ -10,7 +10,7 @@ class CTGANTorchDataset(Dataset):
 
     bands = [3, 2, 1, 7]  # [red, green, blue, NIR]
 
-    def __init__(self, dataset_manager, device, mode=None):
+    def __init__(self, dataset_manager, mode=None):
 
         if not dataset_manager.has_cloud_maps:
             raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
@@ -21,7 +21,6 @@ class CTGANTorchDataset(Dataset):
                              f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
 
         self.manager = dataset_manager
-        self.device = device
         self.mode = mode
 
         if mode is None:
@@ -43,7 +42,6 @@ class CTGANTorchDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    # TODO: band selection is faulty, fix it
     def __getitem__(self, idx):
 
         sample = self.data.iloc[idx]
@@ -141,10 +139,10 @@ class CTGANTorchDataset(Dataset):
 
 class CTGANTorchIterableDataset(IterableDataset):
 
-    def __init__(self, dataset_manager, device, mode=None, cloud_threshold=0.05):
+    def __init__(self, dataset_manager, mode=None, cloud_threshold=0.05):
 
         self.cloud_threshold = cloud_threshold
-        self.map_dataset = CTGANTorchDataset(dataset_manager, device, mode=mode)
+        self.map_dataset = CTGANTorchDataset(dataset_manager, mode=mode)
         self.collate_fn = self.map_dataset.collate_fn
 
     def __iter__(self):
