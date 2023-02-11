@@ -10,7 +10,6 @@ import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from scipy.ndimage import gaussian_filter
-import pandas as pd
 
 
 class Sen12mscrtsDatasetManager:
@@ -144,9 +143,14 @@ class Sen12mscrtsDatasetManager:
     def read_tif(filepath):
         return rasterio.open(filepath).read()
 
-    @staticmethod
-    def bands_last(s2_image):
+    @classmethod
+    def bands_last(cls, s2_image):
         return np.transpose(s2_image, (1, 2, 0))
+
+    @classmethod
+    def prepare_for_cloud_detector(cls, s2_image):
+        s2_image = cls.bands_last(s2_image)
+        return s2_image.clip(0, 10000) / 10000
 
     @classmethod
     def rescale_s2(cls, s2_image):
