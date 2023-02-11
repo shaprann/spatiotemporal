@@ -137,12 +137,99 @@ class CTGANTorchDataset(Dataset):
         return np.round(s2_image * 10000).astype('uint16')
 
 
+class MinimalTorchDataset(Dataset):
+
+    bands = [3, 2, 1, 7]  # [red, green, blue, NIR]
+
+    def __init__(self, dataset_manager, mode=None):
+
+        if not dataset_manager.has_cloud_maps:
+            raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
+                             "Check whether path to cloud maps directory has been provided to dataset manager.")
+
+        if mode is not None and mode not in ["train", "test", "val"]:
+            raise ValueError(f"Incorrect mode provided. "
+                             f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
+
+        self.manager = dataset_manager
+        self.mode = mode
+
+        if mode is None:
+            self.data = self.manager.data.copy()
+        else:
+            self.data = self.manager.data_subset(split=mode).copy()
+
+        self.data = self.data.drop("S1", axis=1)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+
+        sample = self.data.iloc[idx]
+        index = sample.name
+
+        original_s2_image = self.manager.read_tif(sample["S2"])
+
+        cloud_map = self.manager.get_cloud_map(
+            cloud_map_path=sample["S2_cloud_map"],
+            s2_image=self.rescale(self.bands_last(original_s2_image))
+        )
+
+        cloud_percentage = cloud_map.mean()
+
+        return {
+            "index":                index,
+            "original_s2_image":    original_s2_image,
+            "cloud_map":            cloud_map,
+            "cloud_percentage":     cloud_percentage
+        }
+
+    @staticmethod
+    def collate_fn(list_of_samples):
+
+        result = {
+            "index": [],
+            "original_s2_image": [],
+            "cloud_map": [],
+            "cloud_percentage": []
+        }
+        for sample in list_of_samples:
+            result["index"].append(sample["index"])
+            result["original_s2_image"].append(sample["original_s2_image"])
+            result["cloud_map"].append(sample["cloud_map"])
+            result["cloud_percentage"].append(sample["cloud_percentage"])
+
+        result["original_s2_image"] = np.stack(result["original_s2_image"])
+        result["cloud_map"] = np.stack(result["cloud_map"])
+
+        return result
+
+    @staticmethod
+    def bands_last(s2_image):
+        return np.transpose(s2_image, (1, 2, 0))
+
+    @staticmethod
+    def rescale(s2_image):
+        return s2_image.clip(0, 10000) / 10000
+
+    @staticmethod
+    def rescale_back(s2_image):
+        return np.round(s2_image * 10000).astype('uint16')
+
+
 class CTGANTorchIterableDataset(IterableDataset):
 
-    def __init__(self, dataset_manager, mode=None, cloud_threshold=0.05):
+    def __init__(self, dataset_manager=None, wrapped_dataset=None, mode=None, cloud_threshold=0.05):
 
+        if not dataset_manager and not wrapped_dataset:
+            raise ValueError("You need to provide either a dataset manager, or a pytorch dataset")
+
+        if wrapped_dataset:
+            self.map_dataset = wrapped_dataset
+        else:
+            self.map_dataset = CTGANTorchDataset(dataset_manager, mode=mode)
         self.cloud_threshold = cloud_threshold
-        self.map_dataset = CTGANTorchDataset(dataset_manager, mode=mode)
         self.collate_fn = self.map_dataset.collate_fn
 
     def __iter__(self):
