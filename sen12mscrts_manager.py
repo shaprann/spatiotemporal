@@ -267,10 +267,17 @@ class ImageUtils:
         return rescaled_image
 
     @classmethod
-    def rescale_s2_back(cls, rescaled_s2_image):
+    def rescale_s2_back(cls, rescaled_s2_image, bands=None):
+
+        if not rescaled_s2_image.ndim == 3:
+            raise ValueError("Image must have 3 dimensions")
 
         bands_min = cls.min_max["min"].values[:, np.newaxis, np.newaxis]
         bands_max = cls.min_max["max"].values[:, np.newaxis, np.newaxis]
+
+        if bands:
+            bands_min = bands_min[bands]
+            bands_max = bands_max[bands]
 
         back_rescaled_image = rescaled_s2_image / 2
         back_rescaled_image = back_rescaled_image + 0.5
