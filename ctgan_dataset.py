@@ -278,18 +278,20 @@ class CTGANTorchIterableDataset(IterableDataset):
 
         self.current_iteration += 1
 
-        # dismiss samples based on target cloud cover
+        # dismiss samples where target cloud cover is too high
         target_cloud_percentage = self.map_dataset.sneak_peek(idx)
-        if not target_cloud_percentage < self.target_cloud_threshold:
+        if target_cloud_percentage > self.target_cloud_threshold:
             return self.__next__()
 
         sample = self.map_dataset[idx]
 
-        # dismiss samples where too much area was always cloudy in all three images
+        # dismiss samples where too much area was always cloudy in all three images, hence too little visible area
         multiplied_clouds = sample["input_cloud_maps"][0] * sample["input_cloud_maps"][1] * sample["input_cloud_maps"][2]
         visible_area = (multiplied_clouds < 0.5).float().mean()
         if visible_area < self.input_visible_area_threshold:
             return self.__next__()
+
+        return sample
 
     def __len__(self):
         return len(self.map_dataset)
