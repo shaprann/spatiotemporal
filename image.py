@@ -88,9 +88,9 @@ class ImageFile:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
         """
 
-        if Path(self.manager.root_dir) in Path(self.directory):
+        if Path(self.manager.root_dir) in Path(self.directory).parents:
             root_dir = self.manager.root_dir
-        elif Path(self.manager.cloud_maps_dir) in Path(self.directory):
+        elif Path(self.manager.cloud_maps_dir) in Path(self.directory).parents:
             root_dir = self.manager.cloud_maps_dir
         else:
             raise ValueError(f"Expected a path from root directory of from cloud path directory. "
