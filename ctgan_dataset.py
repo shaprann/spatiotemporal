@@ -18,6 +18,11 @@ class CTGANTorchDataset(Dataset):
         self.data = self.manager.data_subset(split=mode).copy()
         self._prepare_data()
 
+        # copy some function from manager for better code readability
+        self.rescale_s2 = self.manager.utils.rescale_s2
+        self.read_tif = self.manager.utils.read_tif
+        self.get_cloud_map = self.manager.utils.get_cloud_map
+
     @staticmethod
     def _check_init_arguments(dataset_manager, mode):
 
@@ -51,39 +56,30 @@ class CTGANTorchDataset(Dataset):
         sample = self.data.iloc[idx]
         index = sample.name
 
-        original_s2_image = self.manager.read_tif(sample["S2"])
+        original_s2_image = self.read_tif(sample["S2"])
 
         # need this for cloud maps
         original_input_images = [
-            self.manager.read_tif(sample["S2_t-1"]),
-            self.manager.read_tif(sample["S2_t-2"]),
-            self.manager.read_tif(sample["S2_t-3"])
+            self.read_tif(sample["S2_t-1"]),
+            self.read_tif(sample["S2_t-2"]),
+            self.read_tif(sample["S2_t-3"])
         ]
 
         input_cloud_maps = [
-            self.manager.get_cloud_map(
-                cloud_map_path=sample["S2CLOUDMAP_t-1"],
-                s2_image=self.manager.prepare_for_cloud_detector(original_input_images[0])
-            ),
-            self.manager.get_cloud_map(
-                cloud_map_path=sample["S2CLOUDMAP_t-2"],
-                s2_image=self.manager.prepare_for_cloud_detector(original_input_images[1])
-            ),
-            self.manager.get_cloud_map(
-                cloud_map_path=sample["S2CLOUDMAP_t-3"],
-                s2_image=self.manager.prepare_for_cloud_detector(original_input_images[2])
-            )
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-1"], s2_image=original_input_images[0]),
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-2"], s2_image=original_input_images[1]),
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-3"], s2_image=original_input_images[2])
         ]
 
         input_images = [
-            self.manager.rescale_s2(image)[self.bands] for image in original_input_images
+            self.rescale_s2(image)[self.bands] for image in original_input_images
         ]
 
         target_image = self.manager.rescale_s2(original_s2_image)[self.bands]
 
-        cloud_percentage = self.manager.get_cloud_map(
+        cloud_percentage = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
-            s2_image=self.manager.prepare_for_cloud_detector(original_s2_image)
+            s2_image=original_s2_image
         ).mean()
 
         return {
@@ -148,6 +144,10 @@ class MinimalTorchDataset(Dataset):
 
         self.data = self.data.drop("S1", axis=1)
 
+        # copy some function from manager for better code readability
+        self.read_tif = self.manager.utils.read_tif
+        self.get_cloud_map = self.manager.utils.get_cloud_map
+
     @staticmethod
     def _check_init_arguments(dataset_manager, mode):
 
@@ -167,11 +167,11 @@ class MinimalTorchDataset(Dataset):
         sample = self.data.iloc[idx]
         index = sample.name
 
-        original_s2_image = self.manager.read_tif(sample["S2"])
+        original_s2_image = self.read_tif(sample["S2"])
 
-        cloud_map = self.manager.get_cloud_map(
+        cloud_map = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
-            s2_image=self.manager.prepare_for_cloud_detector(original_s2_image)
+            s2_image=original_s2_image
         )
 
         cloud_percentage = cloud_map.mean()

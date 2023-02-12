@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 import os
-from os.path import join, isfile, isdir
+from os import makedirs
+from os.path import join, isfile, isdir, dirname, abspath
 import warnings
 import yaml
 from image import ImageFile
@@ -25,7 +26,6 @@ class Sen12mscrtsDatasetManager:
 
     # load definition of data subsets (regions and test/val splits)
     subsets = pd.read_csv(join(project_directory, "subsets.csv"), index_col=["ROI", "tile"])
-    min_max = pd.read_csv(join(project_directory, "98_percentile_min_max.csv"), index_col="band")
 
     def __init__(
             self,
@@ -44,10 +44,7 @@ class Sen12mscrtsDatasetManager:
         self._data = None
 
         self.cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
-
-        # self.load_dataset()
-        # self.load_cloudmasks()
-        # self.load_cloud_percentage()
+        self.utils = ImageUtils(manager=self)
 
     @property
     def data(self):
@@ -104,23 +101,6 @@ class Sen12mscrtsDatasetManager:
         # put modality into columns (creates a pd.DataFrame
         self._data = self._data.unstack("modality")
 
-
-    def get_cloud_map(self, cloud_map_path, s2_image):
-
-        threshold = 0.5
-
-        try:
-            return self.read_tif(cloud_map_path)
-
-        except RasterioIOError:
-            if type(s2_image) is str:
-                s2_image = self.read_tif(s2_image)
-            cloud_map = self.cloud_detector.get_cloud_probability_maps(s2_image)
-            cloud_map = cloud_map[np.newaxis, ...]
-            cloud_map[cloud_map < threshold] = 0
-            cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
-            return cloud_map
-
     def data_subset(self, split=None, only_resampled=True):
 
         if split is not None:
@@ -143,12 +123,124 @@ class Sen12mscrtsDatasetManager:
 
         return self.data.iloc[indices]
 
+# ####################### ImageUtils ###########################
+
+
+class ImageUtils:
+
+    project_directory = os.path.abspath(os.path.dirname(__file__))
+    min_max = pd.read_csv(join(project_directory, "98_percentile_min_max.csv"), index_col="band")
+
+    def __init__(self, manager):
+        self.manager = manager
+
+    def get_cloud_map(self, cloud_map_path=None, s2_image=None, index=None, threshold=0.5):
+
+        # handle index and cloud_map_path
+        if index and not cloud_map_path:
+            try:
+                cloud_map_path = self.manager.data.loc[index]["S2CLOUDMAP"]
+            except KeyError:
+                raise ValueError(f"Can not find path to cloud mask in the dataset using provided index: {index}")
+
+        if cloud_map_path and not index:
+            index = ImageFile(manager=self.manager, filepath=cloud_map_path).short_index
+            if index not in self.manager.data.index:
+                raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
+
+        # try simply loading cloud map from disk
+        if cloud_map_path:
+            try:
+                return self.read_tif(filepath=cloud_map_path)
+            except RasterioIOError:
+                pass
+
+        # try to retrieve path to s2 image
+        path_to_s2 = None
+        if index:
+            try:
+                path_to_s2 = self.manager.data.loc[index]["S2"]
+            except KeyError:
+                pass
+
+        # load s2 image if not loaded yet
+        if s2_image is None:
+            if path_to_s2 is None:
+                raise ValueError("Cloud not find the corresponding Sentinel-2 image in the dataset")
+            try:
+                s2_image = self.read_tif(path_to_s2)
+            except RasterioIOError:
+                raise ValueError("Could not find the corresponding Sentinel-2 image under the path from the dataset")
+
+        # at this point it is guaranteed that s2_image has been loaded
+        # calculate cloud map
+        s2_image = self.prepare_for_cloud_detector(s2_image)
+        cloud_map = self.manager.cloud_detector.get_cloud_probability_maps(s2_image)
+        cloud_map = cloud_map[np.newaxis, ...]
+        cloud_map[cloud_map < threshold] = 0
+        cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
+
+        # try to save cloud mask
+        # we can only save to .tif file if we have an example Sentinel-2 .tif file to copy its rasterio profile
+        if cloud_map_path and path_to_s2:
+            rasterio_profile = self.get_rasterio_profile(path_to_s2)
+
+            self.save_tif(
+                filepath=cloud_map_path,
+                image=cloud_map,
+                rasterio_profile=rasterio_profile,
+                dtype=rasterio.float32
+            )
+
+        # try to store cloud percentage
+        # if index:
+        #    self.register_cloud_percentage(index, cloud_percentage=cloud_map.mean())
+
+        return cloud_map
+
     @staticmethod
     def read_tif(filepath):
-        return rasterio.open(filepath).read()
+        reader = rasterio.open(filepath)
+        return reader.read()
 
-    @classmethod
-    def bands_last(cls, s2_image):
+    @staticmethod
+    def get_rasterio_profile(filepath):
+        reader = rasterio.open(filepath)
+        return reader.profile
+
+    @staticmethod
+    def save_tif(
+        filepath,
+        image,
+        rasterio_profile,
+        dtype=None
+    ):
+
+        if image.ndim == 2:
+            image = image[np.newaxis]
+
+        if not image.ndim == 3:
+            raise ValueError(f"Can only save images of shape [height, width] or [band, height, width]. "
+                             f"Got instead: {image.shape}")
+
+        if not rasterio_profile["height"] == image.shape[1] or not rasterio_profile["width"] == image.shape[2]:
+            raise ValueError(f"Height and width of rasterio profile "
+                             f"({rasterio_profile['height']}, {rasterio_profile['width']}) "
+                             f"and provided array ({image.shape[1]}, {image.shape[2]}) do not match")
+
+        if dtype:
+            rasterio_profile["dtype"] = dtype
+
+        rasterio_profile["count"] = image.shape[0]
+
+        filepath = abspath(filepath)
+        makedirs(dirname(filepath), exist_ok=True)
+
+        with rasterio.open(filepath, 'w', **rasterio_profile) as dst:
+            dst.write(image)
+
+    @staticmethod
+    def bands_last(s2_image):
         return np.transpose(s2_image, (1, 2, 0))
 
     @classmethod
@@ -158,6 +250,10 @@ class Sen12mscrtsDatasetManager:
 
     @classmethod
     def rescale_s2(cls, s2_image):
+
+        if not s2_image.shape[0] == 13 or not s2_image.ndim == 3:
+            raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
+                             f"Got instead: {s2_image.shape}")
 
         bands_min = cls.min_max["min"].values[:, np.newaxis, np.newaxis]
         bands_max = cls.min_max["max"].values[:, np.newaxis, np.newaxis]

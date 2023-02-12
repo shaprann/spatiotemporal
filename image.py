@@ -1,10 +1,5 @@
 import os
-import rasterio
-import numpy as np
 from os.path import split, relpath, isfile, isdir, join
-import xarray as xr
-import rioxarray as rxr
-import warnings
 
 
 class ImageFile:
@@ -35,6 +30,10 @@ class ImageFile:
     @property
     def index(self):
         return self._index
+
+    @property
+    def short_index(self):
+        return self._index[:-1]
 
     @property
     def optical(self):
@@ -88,11 +87,16 @@ class ImageFile:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
         """
 
-        if not self.directory.startswith(self.manager.root_dir):
-            raise ValueError(f"Expected a path from root directory. Received instead: {self.directory}")
+        if self.directory.startswith(self.manager.root_dir):
+            root_dir = self.manager.root_dir
+        elif self.directory.startswith(self.manager.cloud_maps_dir):
+            root_dir = self.manager.cloud_maps_dir
+        else:
+            raise ValueError(f"Expected a path from root directory of from cloud path directory. "
+                             f"Received instead: {self.directory}")
 
         # convert to relative path (removes root_dir from the path)
-        directory = relpath(self.directory, self.manager.root_dir)
+        directory = relpath(self.directory, root_dir)
 
         try:
             roi, tile, modality, timestep = directory.split(os.sep)
