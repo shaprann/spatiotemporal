@@ -1,5 +1,6 @@
 import os
 from os.path import split, relpath, isfile, isdir, join
+from pathlib import Path
 
 
 class ImageFile:
@@ -87,9 +88,9 @@ class ImageFile:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
         """
 
-        if self.directory.startswith(self.manager.root_dir):
+        if Path(self.manager.root_dir) in Path(self.directory):
             root_dir = self.manager.root_dir
-        elif self.directory.startswith(self.manager.cloud_maps_dir):
+        elif Path(self.manager.cloud_maps_dir) in Path(self.directory):
             root_dir = self.manager.cloud_maps_dir
         else:
             raise ValueError(f"Expected a path from root directory of from cloud path directory. "
