@@ -48,6 +48,18 @@ class CTGANTorchDataset(Dataset):
 
         self.data = self.data.dropna(how="any")
 
+    def sneak_peek(self, idx):
+        """
+        Allows to take a sneak peek at cloud percentage at specific index.
+        This can reduce computation because batch can be discarded without loading the whole sample
+
+        :param idx: same idx as in __getitem__()
+        :return: cloud percentage
+        """
+        index = self.data.index[idx]
+        cloud_map = self.get_cloud_map(index=index)
+        return cloud_map.mean()
+
     def __len__(self):
         return len(self.data)
 
@@ -159,6 +171,18 @@ class MinimalTorchDataset(Dataset):
             raise ValueError(f"Incorrect mode provided. "
                              f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
 
+    def sneak_peek(self, idx):
+        """
+        Allows to take a sneak peek at cloud percentage at specific index.
+        This can reduce computation because batch can be discarded without loading the whole sample
+
+        :param idx: same idx as in __getitem__()
+        :return: cloud percentage
+        """
+        index = self.data.index[idx]
+        cloud_map = self.get_cloud_map(index=index)
+        return cloud_map.mean()
+
     def __len__(self):
         return len(self.data)
 
@@ -243,12 +267,12 @@ class CTGANTorchIterableDataset(IterableDataset):
         except IndexError:
             raise StopIteration
 
-        sample = self.map_dataset[idx]
-
         self.current_iteration += 1
 
-        if sample["cloud_percentage"] < self.cloud_threshold:
-            return sample
+        cloud_percentage = self.map_dataset.sneak_peek(idx)
+
+        if cloud_percentage < self.cloud_threshold:
+            return self.map_dataset[idx]
         else:
             return self.__next__()
 
