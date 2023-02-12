@@ -75,7 +75,7 @@ class CTGANTorchDataset(Dataset):
             self.rescale_s2(image)[self.bands] for image in original_input_images
         ]
 
-        target_image = self.manager.rescale_s2(original_s2_image)[self.bands]
+        target_image = self.rescale_s2(original_s2_image)[self.bands]
 
         cloud_percentage = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
