@@ -230,7 +230,14 @@ class MinimalTorchDataset(Dataset):
 
 class CTGANTorchIterableDataset(IterableDataset):
 
-    def __init__(self, dataset_manager=None, wrapped_dataset=None, mode=None, cloud_threshold=0.05):
+    def __init__(
+            self,
+            dataset_manager=None,
+            wrapped_dataset=None,
+            mode=None,
+            target_cloud_threshold=0.05,
+            input_visible_area_threshold=0.5
+    ):
 
         if not dataset_manager and not wrapped_dataset:
             raise ValueError("You need to provide either a dataset manager, or a pytorch dataset")
@@ -239,7 +246,9 @@ class CTGANTorchIterableDataset(IterableDataset):
             self.map_dataset = wrapped_dataset
         else:
             self.map_dataset = CTGANTorchDataset(dataset_manager, mode=mode)
-        self.cloud_threshold = cloud_threshold
+
+        self.target_cloud_threshold = target_cloud_threshold
+        self.input_visible_area_threshold = input_visible_area_threshold
         self.collate_fn = self.map_dataset.collate_fn
 
     def __iter__(self):
@@ -269,11 +278,17 @@ class CTGANTorchIterableDataset(IterableDataset):
 
         self.current_iteration += 1
 
-        cloud_percentage = self.map_dataset.sneak_peek(idx)
+        # dismiss samples based on target cloud cover
+        target_cloud_percentage = self.map_dataset.sneak_peek(idx)
+        if not target_cloud_percentage < self.target_cloud_threshold:
+            return self.__next__()
 
-        if cloud_percentage < self.cloud_threshold:
-            return self.map_dataset[idx]
-        else:
+        sample = self.map_dataset[idx]
+
+        # dismiss samples where too much area was always cloudy in all three images
+        multiplied_clouds = sample["input_cloud_maps"][0] * sample["input_cloud_maps"][1] * sample["input_cloud_maps"][2]
+        visible_area = (multiplied_clouds < 0.5).float().mean()
+        if visible_area < self.input_visible_area_threshold:
             return self.__next__()
 
     def __len__(self):
