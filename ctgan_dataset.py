@@ -454,10 +454,11 @@ class CTGANTorchIterableDataset(IterableDataset):
         sample = self.map_dataset[idx]
 
         # dismiss samples where too much area was always cloudy in all three images, hence too little visible area
-        multiplied_clouds = sample["input_cloud_maps"][0] * sample["input_cloud_maps"][1] * sample["input_cloud_maps"][2]
-        visible_area = (multiplied_clouds < 0.5).float().mean()
-        if visible_area < self.input_visible_area_threshold:
-            return self.__next__()
+        if "input_cloud_maps" in sample:
+            multiplied_clouds = sample["input_cloud_maps"][0] * sample["input_cloud_maps"][1] * sample["input_cloud_maps"][2]
+            visible_area = (multiplied_clouds < 0.5).float().mean()
+            if visible_area < self.input_visible_area_threshold:
+                return self.__next__()
 
         return sample
 
