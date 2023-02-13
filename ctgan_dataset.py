@@ -143,6 +143,173 @@ class CTGANTorchDataset(Dataset):
         return result
 
 
+class S1CTGANTorchDataset(Dataset):
+
+    bands = [3, 2, 1, 7]  # [red, green, blue, NIR]
+
+    def __init__(self, dataset_manager, mode=None):
+
+        self._check_init_arguments(dataset_manager, mode)
+        self.manager = dataset_manager
+        self.mode = mode
+        self.data = self.manager.data_subset(split=mode).copy()
+        self._prepare_data()
+
+        # copy some function from manager for better code readability
+        self.rescale_s2 = self.manager.utils.rescale_s2
+        self.rescale_s1 = self.manager.utils.rescale_s1
+        self.read_tif = self.manager.utils.read_tif
+        self.get_cloud_map = self.manager.utils.get_cloud_map
+
+    @staticmethod
+    def _check_init_arguments(dataset_manager, mode):
+
+        if not dataset_manager.has_cloud_maps:
+            raise ValueError("Provided dataset manager does not contain paths to cloud maps. "
+                             "Check whether path to cloud maps directory has been provided to dataset manager.")
+
+        if mode is not None and mode not in ["train", "test", "val"]:
+            raise ValueError(f"Incorrect mode provided. "
+                             f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
+
+    def _prepare_data(self):
+
+        self.data["S2_t-1"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(1)
+        self.data["S2_t-2"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(2)
+        self.data["S2_t-3"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(3)
+
+        self.data["S2CLOUDMAP_t-1"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(1)
+        self.data["S2CLOUDMAP_t-2"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(2)
+        self.data["S2CLOUDMAP_t-3"] = self.data["S2CLOUDMAP"].groupby(level=["ROI", "tile", "patch"]).shift(3)
+
+        self.data["S1_t-1"] = self.data["S1"].groupby(level=["ROI", "tile", "patch"]).shift(1)
+        self.data["S1_t-2"] = self.data["S1"].groupby(level=["ROI", "tile", "patch"]).shift(2)
+        self.data["S1_t-3"] = self.data["S1"].groupby(level=["ROI", "tile", "patch"]).shift(3)
+
+        self.data = self.data.dropna(how="any")
+
+    def sneak_peek(self, idx):
+        """
+        Allows to take a sneak peek at cloud percentage at specific index.
+        This can reduce computation because batch can be discarded without loading the whole sample
+
+        :param idx: same idx as in __getitem__()
+        :return: cloud percentage
+        """
+        index = self.data.index[idx]
+        cloud_map = self.get_cloud_map(index=index)
+        return cloud_map.mean()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+
+        sample = self.data.iloc[idx]
+        index = sample.name
+
+        original_s2_image = self.read_tif(sample["S2"])
+        original_s1_image = self.read_tif(sample["S1"])
+
+        # need this for cloud maps
+        original_input_images = [
+            self.read_tif(sample["S2_t-1"]),
+            self.read_tif(sample["S2_t-2"]),
+            self.read_tif(sample["S2_t-3"])
+        ]
+
+        original_input_images_s1 = [
+            self.read_tif(sample["S1_t-1"]),
+            self.read_tif(sample["S1_t-2"]),
+            self.read_tif(sample["S1_t-3"])
+        ]
+
+        input_cloud_maps = [
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-1"], s2_image=original_input_images[0]),
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-2"], s2_image=original_input_images[1]),
+            self.get_cloud_map(cloud_map_path=sample["S2CLOUDMAP_t-3"], s2_image=original_input_images[2])
+        ]
+
+        input_images = [
+            self.rescale_s2(image)[self.bands] for image in original_input_images
+        ]
+
+        input_images_s1 = [
+            self.rescale_s1(image) for image in original_input_images_s1
+        ]
+
+        target_image = self.rescale_s2(original_s2_image)[self.bands]
+        target_s1_image = self.rescale_s1(original_s1_image)
+
+        cloud_percentage = self.get_cloud_map(
+            cloud_map_path=sample["S2CLOUDMAP"],
+            s2_image=original_s2_image
+        ).mean()
+
+        return {
+            "index":                index,
+            "original_s2_image":    original_s2_image,
+            "target_image":         torch.from_numpy(target_image),
+            "target_s1_image":      torch.from_numpy(target_s1_image),
+            "inputs":               [
+                                        torch.from_numpy(s2_image)
+                                        for s2_image in input_images
+                                    ],
+            "input_cloud_maps":     [
+                                        torch.from_numpy(cloud_map)
+                                        for cloud_map in input_cloud_maps
+                                    ],
+            "input_images_s1":      [
+                                        torch.from_numpy(s1_image)
+                                        for s1_image in input_images_s1
+                                    ],
+            "cloud_percentage":     cloud_percentage
+        }
+
+    @staticmethod
+    def collate_fn(list_of_samples):
+
+        result = {
+            "index": [],
+            "original_s2_image": [],
+            "target_image": [],
+            "target_s1_image": [],
+            "inputs": [[], [], []],
+            "input_cloud_maps": [[], [], []],
+            "input_images_s1": [[], [], []],
+            "cloud_percentage": []
+        }
+        for sample in list_of_samples:
+            result["index"].append(sample["index"])
+            result["original_s2_image"].append(sample["original_s2_image"])
+            result["target_image"].append(sample["target_image"])
+            result["target_s1_image"].append(sample["target_s1_image"])
+            result["inputs"][0].append(sample["inputs"][0])
+            result["inputs"][1].append(sample["inputs"][1])
+            result["inputs"][2].append(sample["inputs"][2])
+            result["input_cloud_maps"][0].append(sample["input_cloud_maps"][0])
+            result["input_cloud_maps"][1].append(sample["input_cloud_maps"][1])
+            result["input_cloud_maps"][2].append(sample["input_cloud_maps"][2])
+            result["input_images_s1"][0].append(sample["input_images_s1"][0])
+            result["input_images_s1"][1].append(sample["input_images_s1"][1])
+            result["input_images_s1"][2].append(sample["input_images_s1"][2])
+            result["cloud_percentage"].append(sample["cloud_percentage"])
+
+        result["target_image"] = torch.stack(result["target_image"])
+        result["target_s1_image"] = torch.stack(result["target_s1_image"])
+        result["inputs"][0] = torch.stack(result["inputs"][0])
+        result["inputs"][1] = torch.stack(result["inputs"][1])
+        result["inputs"][2] = torch.stack(result["inputs"][2])
+        result["input_cloud_maps"][0] = torch.stack(result["input_cloud_maps"][0])
+        result["input_cloud_maps"][1] = torch.stack(result["input_cloud_maps"][1])
+        result["input_cloud_maps"][2] = torch.stack(result["input_cloud_maps"][2])
+        result["input_images_s1"][0] = torch.stack(result["input_images_s1"][0])
+        result["input_images_s1"][1] = torch.stack(result["input_images_s1"][1])
+        result["input_images_s1"][2] = torch.stack(result["input_images_s1"][2])
+
+        return result
+
+
 class MinimalTorchDataset(Dataset):
 
     bands = [3, 2, 1, 7]  # [red, green, blue, NIR]
@@ -295,3 +462,6 @@ class CTGANTorchIterableDataset(IterableDataset):
 
     def __len__(self):
         return len(self.map_dataset)
+
+    def __add__(self, other):
+        raise NotImplementedError("Adding datasets together is not implemented yet")
