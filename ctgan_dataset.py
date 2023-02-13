@@ -321,8 +321,6 @@ class MinimalTorchDataset(Dataset):
         self.mode = mode
         self.data = self.manager.data_subset(split=mode).copy()
 
-        self.data = self.data.drop("S1", axis=1)
-
         # copy some function from manager for better code readability
         self.read_tif = self.manager.utils.read_tif
         self.get_cloud_map = self.manager.utils.get_cloud_map
@@ -359,17 +357,17 @@ class MinimalTorchDataset(Dataset):
         index = sample.name
 
         original_s2_image = self.read_tif(sample["S2"])
-
+        original_s1_image = self.read_tif(sample["S1"])
         cloud_map = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
             s2_image=original_s2_image
         )
-
         cloud_percentage = cloud_map.mean()
 
         return {
             "index":                index,
             "original_s2_image":    original_s2_image,
+            "original_s1_image":    original_s1_image,
             "cloud_map":            cloud_map,
             "cloud_percentage":     cloud_percentage
         }
@@ -380,16 +378,19 @@ class MinimalTorchDataset(Dataset):
         result = {
             "index": [],
             "original_s2_image": [],
+            "original_s1_image": [],
             "cloud_map": [],
             "cloud_percentage": []
         }
         for sample in list_of_samples:
             result["index"].append(sample["index"])
             result["original_s2_image"].append(sample["original_s2_image"])
+            result["original_s1_image"].append(sample["original_s1_image"])
             result["cloud_map"].append(sample["cloud_map"])
             result["cloud_percentage"].append(sample["cloud_percentage"])
 
         result["original_s2_image"] = np.stack(result["original_s2_image"])
+        result["original_s1_image"] = np.stack(result["original_s1_image"])
         result["cloud_map"] = np.stack(result["cloud_map"])
 
         return result
