@@ -129,7 +129,8 @@ class Sen12mscrtsDatasetManager:
 class ImageUtils:
 
     project_directory = os.path.abspath(os.path.dirname(__file__))
-    min_max = pd.read_csv(join(project_directory, "98_percentile_min_max.csv"), index_col="band")
+    min_max_s2 = pd.read_csv(join(project_directory, "S2_99_percentile_min_max.csv"), index_col="band")
+    min_max_s1 = pd.read_csv(join(project_directory, "S1_99_percentile_min_max.csv"), index_col="band")
 
     def __init__(self, manager):
         self.manager = manager
@@ -248,17 +249,20 @@ class ImageUtils:
         s2_image = cls.bands_last(s2_image)
         return s2_image.clip(0, 10000) / 10000
 
-    @classmethod
-    def rescale_s2(cls, s2_image):
+    @staticmethod
+    def rescale(image, bands_min, bands_max):
 
-        if not s2_image.shape[0] == 13 or not s2_image.ndim == 3:
-            raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
-                             f"Got instead: {s2_image.shape}")
+        if not image.ndim == 3:
+            raise ValueError(f"Only accept images of shape [band, height, width]. "
+                             f"Got instead: {image.shape}")
+        if not image.shape[0] == bands_min.shape[0] == bands_max.shape[0]:
+            raise ValueError(f"Number of image bands must be equal to number of values of bands_min and bands_max."
+                             f"Got instead: {image.shape[0]}, {bands_min.shape[0]}, {bands_max.shape[0]}")
 
-        bands_min = cls.min_max["min"].values[:, np.newaxis, np.newaxis]
-        bands_max = cls.min_max["max"].values[:, np.newaxis, np.newaxis]
+        bands_min = np.array(bands_min)[:, np.newaxis, np.newaxis]
+        bands_max = np.array(bands_max)[:, np.newaxis, np.newaxis]
 
-        rescaled_image = s2_image.clip(min=bands_min, max=bands_max)
+        rescaled_image = image.clip(min=bands_min, max=bands_max)
         rescaled_image = rescaled_image - bands_min
         rescaled_image = rescaled_image / (bands_max - bands_min)
         rescaled_image = rescaled_image - 0.5
@@ -267,21 +271,66 @@ class ImageUtils:
         return rescaled_image
 
     @classmethod
-    def rescale_s2_back(cls, rescaled_s2_image, bands=None):
+    def rescale_s2(cls, s2_image):
 
-        if not rescaled_s2_image.ndim == 3:
+        if not s2_image.shape[0] == 13:
+            raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
+                             f"Got instead: {s2_image.shape}")
+        return cls.rescale(
+            image=s2_image,
+            bands_min=cls.min_max_s2["min"],
+            bands_max=cls.min_max_s2["max"]
+        )
+
+    @classmethod
+    def rescale_s1(cls, s1_image):
+
+        if not s1_image.shape[0] == 2:
+            raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
+                             f"Got instead: {s1_image.shape}")
+        return cls.rescale(
+            image=s1_image,
+            bands_min=cls.min_max_s1["min"],
+            bands_max=cls.min_max_s1["max"]
+        )
+
+    @staticmethod
+    def rescale_back(image, bands_min, bands_max, bands):
+
+        if not image.ndim == 3:
             raise ValueError("Image must have 3 dimensions")
 
-        bands_min = cls.min_max["min"].values[:, np.newaxis, np.newaxis]
-        bands_max = cls.min_max["max"].values[:, np.newaxis, np.newaxis]
+        bands_min = np.array(bands_min)[:, np.newaxis, np.newaxis]
+        bands_max = np.array(bands_max)[:, np.newaxis, np.newaxis]
 
         if bands:
             bands_min = bands_min[bands]
             bands_max = bands_max[bands]
 
-        back_rescaled_image = rescaled_s2_image / 2
+        back_rescaled_image = image / 2
         back_rescaled_image = back_rescaled_image + 0.5
         back_rescaled_image = back_rescaled_image * (bands_max - bands_min)
         back_rescaled_image = back_rescaled_image + bands_min
 
-        return np.round(back_rescaled_image).astype('uint16')
+        return back_rescaled_image
+
+    @classmethod
+    def rescale_s2_back(cls, rescaled_s2_image, bands=None):
+
+        result = cls.rescale_back(
+            image=rescaled_s2_image,
+            bands_min=cls.min_max_s2["min"],
+            bands_max=cls.min_max_s2["max"],
+            bands=bands
+        )
+        return np.round(result).astype('uint16')
+
+    @classmethod
+    def rescale_s1_back(cls, rescaled_s1_image, bands=None):
+
+        return cls.rescale_back(
+            image=rescaled_s1_image,
+            bands_min=cls.min_max_s1["min"],
+            bands_max=cls.min_max_s1["max"],
+            bands=bands
+        )
