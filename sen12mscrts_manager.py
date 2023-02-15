@@ -16,7 +16,7 @@ from scipy.ndimage import gaussian_filter
 class Sen12mscrtsDatasetManager:
     """
     File manager which finds SEN12MS-CR-TS dataset files, parses some metadata, and stores it in the registry.
-    Registry is stored as a MultiIndex pd.DataFrame under the .registry variable.
+    Registry is stored as a MultiIndex pd.DataFrame under the ._data variable.
     """
 
     # load class config file
@@ -31,8 +31,7 @@ class Sen12mscrtsDatasetManager:
             self,
             root_dir,
             cloud_maps_dir=None,
-            cloud_percentage_csv=None,
-            cloud_percentage_buffer=None
+            cloud_percentage_csv=None
     ):
         if not isdir(root_dir):
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
@@ -58,6 +57,15 @@ class Sen12mscrtsDatasetManager:
     def load_dataset(self):
         self.get_paths_to_files()
         self.build_dataframe()
+
+    def load_from_file(self, filepath):
+        self._data = pd.read_csv(
+            filepath,
+            index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"]
+        )
+
+    def save_to_file(self, filepath):
+        self._data.to_csv(filepath)
 
     def get_paths_to_files(self):
         """

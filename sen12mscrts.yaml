@@ -10,7 +10,6 @@ dataset_content:
   - "S1"
   - "S2"
   - "S2CLOUDMAP"
-  - "S2_cloud_percentage"
 
 hierarchy_in_storage:
   - "ROI"
