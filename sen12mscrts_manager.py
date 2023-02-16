@@ -386,3 +386,10 @@ class ImageUtils:
     @classmethod
     def add_speckle(cls, image, strength=0.4):
         return image + 10 * np.log10(cls.speckle_noise(strength=strength))
+
+    @staticmethod
+    def fillnan(image):
+        image = image
+        for band in range(image.shape[0]):
+            image[band] = np.nan_to_num(image[band], nan=np.nanmean(image[band]))
+        return image

@@ -160,6 +160,7 @@ class S1CTGANTorchDataset(Dataset):
         self.rescale_s1 = self.manager.utils.rescale_s1
         self.read_tif = self.manager.utils.read_tif
         self.get_cloud_map = self.manager.utils.get_cloud_map
+        self.fillnan = self.manager.utils.fillnan
 
     @staticmethod
     def _check_init_arguments(dataset_manager, mode):
@@ -209,7 +210,7 @@ class S1CTGANTorchDataset(Dataset):
         index = sample.name
 
         original_s2_image = self.read_tif(sample["S2"])
-        original_s1_image = self.read_tif(sample["S1"])
+        original_s1_image = self.fillnan(self.read_tif(sample["S1"]))
 
         # need this for cloud maps
         original_input_images = [
@@ -219,9 +220,9 @@ class S1CTGANTorchDataset(Dataset):
         ]
 
         original_input_images_s1 = [
-            self.read_tif(sample["S1_t-1"]),
-            self.read_tif(sample["S1_t-2"]),
-            self.read_tif(sample["S1_t-3"])
+            self.fillnan(self.read_tif(sample["S1_t-1"])),
+            self.fillnan(self.read_tif(sample["S1_t-2"])),
+            self.fillnan(self.read_tif(sample["S1_t-3"]))
         ]
 
         input_cloud_maps = [
@@ -324,6 +325,7 @@ class MinimalTorchDataset(Dataset):
         # copy some function from manager for better code readability
         self.read_tif = self.manager.utils.read_tif
         self.get_cloud_map = self.manager.utils.get_cloud_map
+        self.fillnan = self.manager.utils.fillnan
 
     @staticmethod
     def _check_init_arguments(dataset_manager, mode):
@@ -357,7 +359,7 @@ class MinimalTorchDataset(Dataset):
         index = sample.name
 
         original_s2_image = self.read_tif(sample["S2"])
-        original_s1_image = self.read_tif(sample["S1"])
+        original_s1_image = self.fillnan(self.read_tif(sample["S1"]))
         cloud_map = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
             s2_image=original_s2_image

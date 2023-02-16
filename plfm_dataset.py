@@ -135,6 +135,7 @@ class PLFM_cGAN_TorchDataset(Dataset):
         self.rescale_s1_back = self.manager.utils.rescale_s1_back
         self.add_speckle = self.manager.utils.add_speckle
         self.get_cloud_map = self.manager.utils.get_cloud_map
+        self.fillnan = self.manager.utils.fillnan
 
     @staticmethod
     def _check_init_arguments(dataset_manager, mode):
@@ -168,7 +169,7 @@ class PLFM_cGAN_TorchDataset(Dataset):
         index = sample.name
 
         original_s2_image = self.read_tif(sample["S2"])
-        original_s1_image = self.read_tif(sample["S1"])
+        original_s1_image = self.fillnan(self.read_tif(sample["S1"]))
         cloud_map = self.get_cloud_map(
             cloud_map_path=sample["S2CLOUDMAP"],
             s2_image=original_s2_image
