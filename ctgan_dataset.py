@@ -406,7 +406,8 @@ class CTGANTorchIterableDataset(IterableDataset):
             wrapped_dataset=None,
             mode=None,
             target_cloud_threshold=0.05,
-            input_visible_area_threshold=0.5
+            input_visible_area_threshold=0.5,
+            seed=None
     ):
 
         if not dataset_manager and not wrapped_dataset:
@@ -417,13 +418,20 @@ class CTGANTorchIterableDataset(IterableDataset):
         else:
             self.map_dataset = CTGANTorchDataset(dataset_manager, mode=mode)
 
+        self.seed = seed
+
         self.target_cloud_threshold = target_cloud_threshold
         self.input_visible_area_threshold = input_visible_area_threshold
         self.collate_fn = self.map_dataset.collate_fn
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        permutation = np.random.permutation(len(self.map_dataset))
+
+        permutation = None
+        if self.seed:
+            permutation = np.random.RandomState(seed=self.seed).permutation(len(self.map_dataset))
+        else:
+            permutation = np.random.permutation(len(self.map_dataset))
 
         if worker_info is None:
             iter_start = 0

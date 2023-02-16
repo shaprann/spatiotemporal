@@ -227,6 +227,7 @@ class PLFM_LSTM_TorchIterableDataset(IterableDataset):
             wrapped_dataset=None,
             mode=None,
             target_cloud_threshold=0.05,
+            seed=None
     ):
 
         if not dataset_manager and not wrapped_dataset:
@@ -237,12 +238,19 @@ class PLFM_LSTM_TorchIterableDataset(IterableDataset):
         else:
             self.map_dataset = PLFM_LSTM_TorchDataset(dataset_manager, mode=mode)
 
+        self.seed = seed
+
         self.target_cloud_threshold = target_cloud_threshold
         self.collate_fn = self.map_dataset.collate_fn
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        permutation = np.random.permutation(len(self.map_dataset))
+
+        permutation = None
+        if self.seed:
+            permutation = np.random.RandomState(seed=self.seed).permutation(len(self.map_dataset))
+        else:
+            permutation = np.random.permutation(len(self.map_dataset))
 
         if worker_info is None:
             iter_start = 0
