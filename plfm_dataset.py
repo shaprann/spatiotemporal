@@ -35,8 +35,6 @@ class PLFM_UNET_TorchDataset(Dataset):
 
     def _prepare_data(self):
 
-        self.data = self.data.drop("S1", axis=1)
-
         self.data["S2_t-1"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(1)
         self.data["S2_t-2"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(2)
         self.data["S2_t-3"] = self.data["S2"].groupby(level=["ROI", "tile", "patch"]).shift(3)
