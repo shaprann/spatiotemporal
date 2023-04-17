@@ -19,8 +19,10 @@ class Sen12mscrtsDatasetManager:
     Registry is stored as a MultiIndex pd.DataFrame under the ._data variable.
     """
 
-    # load class config file
+    # get current project directory
     project_directory = os.path.abspath(os.path.dirname(__file__))
+
+    # load dataset config file
     with open(join(project_directory, "sen12mscrts.yaml"), 'r') as file:
         config = yaml.safe_load(file)
 
@@ -33,6 +35,7 @@ class Sen12mscrtsDatasetManager:
             cloud_maps_dir=None,
             cloud_percentage_csv=None
     ):
+
         if not isdir(root_dir):
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
         self.root_dir = root_dir
@@ -47,7 +50,7 @@ class Sen12mscrtsDatasetManager:
 
     @property
     def data(self):
-        """ Getter method to prevent outer classes from editing the registry """
+        """ Getter method to prevent outer classes from editing the data """
         return self._data
 
     @property

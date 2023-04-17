@@ -16,12 +16,13 @@ class ImageFile:
         self.filepath, self.directory, self.filename = self._handle_paths(filepath, directory, filename)
 
         self.filename_metadata = self._parse_filename()
-        self.filepath_metadata = self._parse_file_location()
+        self.filepath_metadata = self._parse_filepath()
         self._check_metadata_consistency()
         self.metadata = {**self.filename_metadata, **self.filepath_metadata}  # merge two dicts with metadata
 
         self.image_type = self._detect_image_type()
         self._index = self._detect_index()
+
         self._image = None
 
     @property
@@ -59,8 +60,8 @@ class ImageFile:
         Parses information which is stored in the filename of a SEN12MS-CR-TS file.
         Expected filename format: "{modality}_{ROI}_{tile}_ImgNo_{timestep}_{date}_patch_{patch}.tif"
         Example filename:"s2_ROIs1868_100_ImgNo_9_2018-04-25_patch_17.tif"
-        :param str filename: filename to parse
-        :return: dictionary with values. Example:
+
+        :return: dictionary with parsed values. Example:
             {"modality: "S2", "ROI": "ROIs1868", "tile": 100, "timestep": 9, "date": "2018-04-25", "patch": 17}
         """
 
@@ -79,10 +80,10 @@ class ImageFile:
             (modality.upper(), roi, int(tile), int(timestep), date, int(patch))
         ))
 
-    def _parse_file_location(self):
+    def _parse_filepath(self):
         """
         Reads information which is given by file location, i.e. hierarchy of folders where file is stored.
-        :param str directory: full path to folder where the file is stored, without filename itself. Example:
+        Example path:
             "/media/vlad/Extreme SSD/Datasets/Cloud_removal/SEN12MS-CR-TS/test/asiaWest_test/ROIs1868/100/S2/9"
         :return: dictionary with values. Example:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
@@ -101,7 +102,7 @@ class ImageFile:
 
         try:
             roi, tile, modality, timestep = directory.split(os.sep)
-        except ValueError as err:
+        except ValueError:
             raise ValueError(f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {directory}")
 
         return dict(zip(
@@ -118,12 +119,16 @@ class ImageFile:
                                  f"Location {metadata} is {self.filepath_metadata[metadata]}")
 
     def _detect_image_type(self):
-        if self.metadata["modality"] in self.manager.config['dataset_content']:
-            return self.metadata["modality"]
-        else:
-            raise ValueError(f"Can not detect image type. "
-                             f"Allowed types: {self.manager.config['dataset_content']}. "
-                             f"Got instead: {self.metadata['modality']}")
+        self._check_image_type()
+        return self.metadata["modality"]
+
+    def _check_image_type(self):
+        if not self.metadata["modality"] in self.manager.config['dataset_content']:
+            raise ValueError(
+                f"Detected a .tif image of invalid type. "
+                f"Allowed types in the dataset: {self.manager.config['dataset_content']}. "
+                f"Got instead: {self.metadata['modality']}"
+            )
 
     def _detect_index(self):
         return tuple(self.metadata[index_level] for index_level in self.manager.config['dataset_index'])
