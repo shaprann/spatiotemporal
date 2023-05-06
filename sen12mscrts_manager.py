@@ -23,11 +23,11 @@ class Sen12mscrtsDatasetManager:
     project_directory = os.path.abspath(os.path.dirname(__file__))
 
     # load dataset config file
-    with open(join(project_directory, "sen12mscrts.yaml"), 'r') as file:
+    with open(join(project_directory, "config/sen12mscrts.yaml"), 'r') as file:
         config = yaml.safe_load(file)
 
     # load definition of data subsets (regions and test/val splits)
-    subsets = pd.read_csv(join(project_directory, "subsets.csv"), index_col=["ROI", "tile"])
+    subsets = pd.read_csv(join(project_directory, "config/subsets.csv"), index_col=["ROI", "tile"])
 
     def __init__(
             self,
@@ -140,8 +140,8 @@ class Sen12mscrtsDatasetManager:
 class ImageUtils:
 
     project_directory = os.path.abspath(os.path.dirname(__file__))
-    min_max_s2 = pd.read_csv(join(project_directory, "S2_99_percentile_min_max.csv"), index_col="band")
-    min_max_s1 = pd.read_csv(join(project_directory, "S1_99_percentile_min_max.csv"), index_col="band")
+    min_max_s2 = pd.read_csv(join(project_directory, "config/S2_99_percentile_min_max.csv"), index_col="band")
+    min_max_s1 = pd.read_csv(join(project_directory, "config/S1_99_percentile_min_max.csv"), index_col="band")
 
     def __init__(self, manager):
         self.manager = manager
