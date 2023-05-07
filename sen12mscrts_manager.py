@@ -10,7 +10,7 @@ from tqdm import tqdm
 import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filtper
 
 
 class Sen12mscrtsDatasetManager:
@@ -140,8 +140,8 @@ class Sen12mscrtsDatasetManager:
 class ImageUtils:
 
     project_directory = os.path.abspath(os.path.dirname(__file__))
-    min_max_s2 = pd.read_csv(join(project_directory, "config/S2_99_percentile_min_max.csv"), index_col="band")
-    min_max_s1 = pd.read_csv(join(project_directory, "config/S1_99_percentile_min_max.csv"), index_col="band")
+    min_max_s2 = pd.read_csv(join(project_directory, "stats/S2_99_percentile_min_max.csv"), index_col="band")
+    min_max_s1 = pd.read_csv(join(project_directory, "stats/S1_99_percentile_min_max.csv"), index_col="band")
 
     def __init__(self, manager):
         self.manager = manager
