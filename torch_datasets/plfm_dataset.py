@@ -342,6 +342,41 @@ class PLFM_cGAN_TorchDataset(Dataset):
         return result
 
 
+class PLFM_cGAN_SAR_TorchDataset(Dataset):
+
+    def __init__(self, dataset_manager, mode=None):
+
+        self._check_init_arguments(dataset_manager, mode)
+        self.manager = dataset_manager
+        self.mode = mode
+        self.data = self.manager.data_subset(split=mode).copy()
+
+        # copy some function from manager for better code readability
+        self.read_tif = self.manager.utils.read_tif
+        self.rescale_s1 = self.manager.utils.rescale_s1
+        self.rescale_s1_back = self.manager.utils.rescale_s1_back
+        self.fillnan = self.manager.utils.fillnan
+
+    @staticmethod
+    def _check_init_arguments(dataset_manager, mode):
+
+        if mode is not None and mode not in ["train", "test", "val"]:
+            raise ValueError(f"Incorrect mode provided. "
+                             f"Supported modes: None, 'train', 'test', 'val'. Got instead: {mode}")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+
+        sample = self.data.iloc[idx]
+
+        s1_image = self.fillnan(self.read_tif(sample["S1"]))
+        s1_image = self.rescale_s1(s1_image)
+
+        return torch.from_numpy(s1_image).float()
+
+
 class PLFM_LSTM_TorchIterableDataset(IterableDataset):
 
     def __init__(

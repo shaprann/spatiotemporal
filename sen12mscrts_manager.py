@@ -10,7 +10,7 @@ from tqdm import tqdm
 import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
-from scipy.ndimage import gaussian_filtper
+from scipy.ndimage import gaussian_filter
 
 
 class Sen12mscrtsDatasetManager:
