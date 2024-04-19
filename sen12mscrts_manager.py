@@ -11,6 +11,7 @@ import rasterio
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from scipy.ndimage import gaussian_filter
+from threading import Lock
 
 
 class Sen12mscrtsDatasetManager:
@@ -29,21 +30,29 @@ class Sen12mscrtsDatasetManager:
     # load definition of data subsets (regions and test/val splits)
     subsets = pd.read_csv(join(project_directory, "config/subsets.csv"), index_col=["ROI", "tile"])
 
+    # define how cloud masks are calculated from cloud probability maps
+    _cloud_probability_bins = np.arange(start=0.0, stop=1.0+0.05, step=0.05, dtype=np.float64)
+
     def __init__(
             self,
             root_dir,
             cloud_maps_dir=None,
-            cloud_percentage_csv=None
+            cloud_histograms_csv=None,
+            cloud_probability_threshold=None
     ):
 
         if not isdir(root_dir):
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
         self.root_dir = root_dir
         self.cloud_maps_dir = cloud_maps_dir
-        self.cloud_percentage_csv = cloud_percentage_csv
+        self.cloud_histograms_csv = cloud_histograms_csv
+
+        self._cloud_probability_threshold_index = self.locate_cloud_probability_threshold(cloud_probability_threshold)
 
         self._files = {}
         self._data = None
+        self._cloud_histograms = None
+        self._save_cloud_histograms = True
 
         self.cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
         self.utils = ImageUtils(manager=self)
@@ -56,18 +65,99 @@ class Sen12mscrtsDatasetManager:
         return self._data.copy(deep=True)
 
     @property
+    def cloud_histograms(self):
+        """ Getter method to prevent outer classes from editing the cloud histograms DataFrame """
+        if self._cloud_histograms is None:
+            raise ValueError("Dataset is not initialized yet. "
+                             "Try running 'load_dataset()' method first.")
+        return self._cloud_histograms.copy(deep=True)
+
+    @property
     def has_cloud_maps(self):
         return self._data is not None and "S2CLOUDMAP" in self._data
+
+    @property
+    def cloud_probability_threshold(self):
+        if self._cloud_probability_threshold_index is None:
+            raise ValueError("Dataset has no cloud probability threshold stored")
+        return self._cloud_probability_bins[1:-1][self._cloud_probability_threshold_index]
+
+    @property
+    def cloud_probability_bins(self):
+        return self._cloud_probability_bins.copy()
+
+    def get_cloud_histogram(self, index):
+        """ Getter method to get a single cloud histogram """
+        if self._cloud_histograms is None:
+            raise ValueError("Dataset is not initialized yet. "
+                             "Try running 'load_dataset()' method first.")
+
+        try:
+            cloud_histogram = self._cloud_histograms.loc[index].copy(deep=True)
+        except KeyError:
+            raise ValueError("Provided index does not correspond to any index in the dataset")
+
+        # if dataset has no cloud histogram stored, calculate it
+        if cloud_histogram.isna().any():
+            cloud_histogram = self.utils.calculate_cloud_histogram(index=index, store=True)
+
+        return cloud_histogram
+
+    def write_cloud_histogram(self, index, cloud_histogram):
+        """ Setter method to store a single cloud histogram into the dataset"""
+
+        cloud_histogram = np.array(cloud_histogram, dtype=np.int64)
+
+        if self._cloud_histograms is None:
+            raise ValueError("Can not write cloud histogram: dataset is not initialized yet. "
+                             "Try running 'load_dataset()' method first.")
+        if not cloud_histogram.shape == self._cloud_probability_bins[1:].shape:
+            raise ValueError("Can not set cloud histogram: Provided values are incorrect")
+        if np.isnan(cloud_histogram).any():
+            raise ValueError("Can not set cloud histogram: Provided values contain NaNs")
+
+        # write cloud histogram to dataset
+        self._cloud_histograms.loc[index] = cloud_histogram
+
+        # write cloud histogram to drive if necessary
+        if not self._save_cloud_histograms:
+            return
+        elif self.cloud_histograms_csv is not None:
+            self._cloud_histograms.loc[[index]].to_csv(
+                self.cloud_histograms_csv,
+                mode="a",
+                header=False,
+                float_format="%.4f"
+            )
+
+    def get_cloud_percentage(self, index):
+
+        if self._cloud_probability_threshold_index is None:
+            raise ValueError("Dataset has no cloud probability threshold stored.")
+
+        histogram = self.get_cloud_histogram(index)
+        return histogram.iloc[self._cloud_probability_threshold_index+1:].sum() / histogram.sum()
+
+    def locate_cloud_probability_threshold(self, threshold):
+        if threshold is None:
+            return None
+        closest_threshold = np.isclose(threshold, self._cloud_probability_bins[1:-1])  # [1:-1] --> [0.05, ..., 0.95]
+        if not closest_threshold.any():
+            raise ValueError(f"Threshold value {threshold:.4f} is not allowed. "
+                             f"Select one of the following values instead: {self._cloud_probability_bins[1:-1]}")
+        return np.argwhere(closest_threshold).item()
 
     def load_dataset(self):
         self.get_paths_to_files()
         self.build_dataframe()
+        self.initialize_cloud_histograms()
 
     def load_from_file(self, filepath):
         self._data = pd.read_csv(
             filepath,
             index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"]
         )
+        self.initialize_cloud_histograms()
 
     def save_to_file(self, filepath):
         self.data.to_csv(filepath)
@@ -115,6 +205,12 @@ class Sen12mscrtsDatasetManager:
         self._data = self._data.unstack("modality")
 
     def data_subset(self, split=None, only_resampled=True):
+        return self.get_subset(self.data, split=split, only_resampled=only_resampled)
+
+    def cloud_histograms_subset(self, split=None, only_resampled=True):
+        return self.get_subset(self.cloud_histograms, split=split, only_resampled=only_resampled)
+
+    def get_subset(self, dataframe, split=None, only_resampled=True):
 
         if split is not None:
             subset = self.subsets[self.subsets["split"] == split]
@@ -135,6 +231,68 @@ class Sen12mscrtsDatasetManager:
         indices = np.concatenate(iloc_indices) if iloc_indices else []
 
         return dataframe.iloc[indices].copy(deep=True)
+
+    def initialize_cloud_histograms(self):
+        self._cloud_histograms = pd.DataFrame(
+            index=self.data.index,
+            columns=self._cloud_probability_bins[1:],
+            dtype=pd.Int64Dtype()
+        )
+
+        if self.cloud_histograms_csv is not None:
+            self.connect_to_cloud_histograms_csv()
+
+    def connect_to_cloud_histograms_csv(self):
+
+        try:
+            _ = self.data  # this throws an error if data is not initialized
+            _ = self.cloud_histograms  # this throws an error if cloud histograms are not initialized
+        except ValueError as error:
+            raise error
+
+        if self.cloud_histograms_csv is None:
+            raise ValueError("Failed to connect to Cloud Histogram CSV: no path to CSV file is provided")
+
+        try:
+            cloud_histograms_from_csv = pd.read_csv(
+                self.cloud_histograms_csv,
+                index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"],
+            )
+            cloud_histograms_from_csv.columns = cloud_histograms_from_csv.columns.astype(np.float64)
+            cloud_histograms_from_csv = cloud_histograms_from_csv.astype(pd.Int64Dtype())
+            cloud_histograms_from_csv = cloud_histograms_from_csv.dropna(how="any", axis=0)
+            self.check_cloud_histograms(cloud_histograms_from_csv)
+            self._cloud_histograms.loc[cloud_histograms_from_csv.index] = cloud_histograms_from_csv.values
+            self.save_cloud_histograms()  # this way we sort the rows in the .csv file if they were unsorted before
+        except FileNotFoundError:
+            warnings.warn("Failed to connect to Cloud Histograms CSV: provided CSV file does not exist. "
+                          "Create a new CSV file instead.")
+            self.save_cloud_histograms()  # this way we create a new .csv file
+
+    def check_cloud_histograms(self, cloud_histograms_df):
+
+        try:
+            columns_valid = np.allclose(cloud_histograms_df.columns, self._cloud_probability_bins[1:])
+        except ValueError:
+            raise ValueError("Columns of Cloud Histograms CSV are not valid: wrong length")
+
+        if not columns_valid:
+            raise ValueError("Columns of Cloud Histograms CSV are not valid: wrong values")
+
+        try:
+            self.cloud_histograms.loc[cloud_histograms_df.index]
+        except KeyError:
+            raise ValueError("Indices of cloud Histograms CSV do not correspond to the indices in the dataset")
+
+    def save_cloud_histograms(self):
+        self.cloud_histograms.dropna(how="any", axis=0).to_csv(
+            self.cloud_histograms_csv,
+            float_format="%.4f"
+        )
+
+    def pause_saving_histograms(self):
+        lock = CloudHistogramLock(self)
+        return lock
 
 
 # ####################### ImageUtils ###########################
@@ -224,11 +382,74 @@ class ImageUtils:
                 dtype=rasterio.uint16
             )
 
-        # try to store cloud percentage
-        # if index:
-        #    self.register_cloud_percentage(index, cloud_percentage=cloud_map.mean())
+        # Try to save cloud histogram to drive and to the dataset
+        if store_cloud_histogram and index is not None:
+            _ = self.calculate_cloud_histogram(index=index, cloud_map=cloud_map, store=True)
 
         return cloud_map
+
+    def get_categorical_cloud_map(
+            self,
+            cloud_map=None,
+            cloud_map_path=None,
+            s2_image=None,
+            index=None,
+            store_cloud_histogram=True
+    ):
+        if cloud_map is None:
+            try:
+                cloud_map = self.get_cloud_map(
+                    cloud_map_path=cloud_map_path,
+                    s2_image=s2_image,
+                    index=index,
+                    store_cloud_histogram=store_cloud_histogram
+                )
+            except ValueError as err:
+                raise err
+
+        left_bin_edges = self.manager.cloud_probability_bins[:-1].reshape((1, 1, 1, -1))  # shape=[1,   1,   1, 20]
+        right_bin_edges = self.manager.cloud_probability_bins[1:].reshape((1, 1, 1, -1))  # shape=[1,   1,   1, 20]
+        cloud_map = cloud_map[..., np.newaxis]                                          # shape=[1, 256, 256,  1]
+
+        categorical_cloud_map = (left_bin_edges <= cloud_map) & (cloud_map < right_bin_edges)
+
+        return categorical_cloud_map                                                    # shape=[1, 256, 256, 20]
+
+    def get_cloud_mask(
+            self,
+            cloud_map=None,
+            cloud_map_path=None,
+            s2_image=None,
+            index=None,
+            store_cloud_histogram=True
+    ):
+        try:
+            # all histogram bins on the left of threshold are labeled False, on the right True
+            # a bin is defined as [left, right), therefore the threshold value itself belongs to the right bin
+            cloud_probability_threshold = self.manager.cloud_probability_threshold
+        except ValueError as err:
+            raise err
+
+        if cloud_map is None:
+            try:
+                cloud_map = self.get_cloud_map(
+                    cloud_map_path=cloud_map_path,
+                    s2_image=s2_image,
+                    index=index,
+                    store_cloud_histogram=store_cloud_histogram
+                )
+            except ValueError as err:
+                raise err
+
+        return cloud_map >= cloud_probability_threshold  # bins are [left, right), therefore >= and not =
+
+    def calculate_cloud_histogram(self, index, cloud_map=None, store=True):
+        if cloud_map is None:
+            cloud_map = self.get_cloud_map(index=index, store_cloud_histogram=False)
+        cloud_histogram, _ = np.histogram(cloud_map, bins=self.manager.cloud_probability_bins, density=False)
+        if store:
+            self.manager.write_cloud_histogram(index, cloud_histogram)
+        return cloud_histogram
 
     @staticmethod
     def read_tif(filepath):
@@ -274,6 +495,10 @@ class ImageUtils:
     @staticmethod
     def bands_last(s2_image):
         return np.transpose(s2_image, (1, 2, 0))
+
+    @classmethod
+    def threshold(cls, image, threshold_value):
+        return image > threshold_value
 
     @classmethod
     def prepare_for_cloud_detector(cls, s2_image):
@@ -416,3 +641,23 @@ class ImageUtils:
         for band in range(image.shape[0]):
             image[band] = np.nan_to_num(image[band], nan=np.nanmean(image[band]))
         return image
+
+
+# ####################### CloudHistogramLock ###########################
+
+# TODO: locking cloud histograms does not work. Find out what is the problem
+class CloudHistogramLock:
+
+    def __init__(self, manager, save_step=5000):
+        self.manager = manager
+        self.save_step = save_step
+
+        self.counter = 0
+        self.counter_lock = Lock()
+
+    def __enter__(self):
+        self.manager._buffer_cloud_histograms = self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.manager._buffer_cloud_histograms = None
+        self.manager.save_cloud_histograms()
