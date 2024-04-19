@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 from os import makedirs
-from os.path import join, isfile, isdir, dirname, abspath
+from os.path import join, isdir, dirname, abspath
 import warnings
 import yaml
 from image import ImageFile
@@ -146,28 +146,42 @@ class ImageUtils:
     def __init__(self, manager):
         self.manager = manager
 
-    def get_cloud_map(self, cloud_map_path=None, s2_image=None, index=None, threshold=0.5):
+    def get_cloud_map(
+            self,
+            cloud_map_path=None,
+            s2_image=None,
+            index=None,
+            store_cloud_histogram=True
+    ):
 
-        # handle index and cloud_map_path
-        if index and not cloud_map_path:
+        # if index is provided, ignore cloud_map_path argument, get path from the dataset instead, and overwrite it
+        if index is not None:
             try:
                 cloud_map_path = self.manager.data.loc[index]["S2CLOUDMAP"]
             except KeyError:
                 raise ValueError(f"Can not find path to cloud mask in the dataset using provided index: {index}")
 
+        # if only cloud_map_path is provided, retrieve dataset index for the cloud map path
         if cloud_map_path and not index:
             index = ImageFile(manager=self.manager, filepath=cloud_map_path).short_index
             if index not in self.manager.data.index:
                 raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
 
-        # try simply loading cloud map from disk
+        # now we either have both index and cloud map path, or we have neither
+        # if we have the cloud map path, try simply loading cloud map from the drive
         if cloud_map_path:
             try:
-                return self.read_tif(filepath=cloud_map_path)
+                cloud_map_uint16 = self.read_tif(filepath=cloud_map_path)
+                cloud_map = (cloud_map_uint16 / 10000.0).astype(np.float32)  # convert from uint16 back to float32
+                if store_cloud_histogram and index is not None:
+                    _ = self.calculate_cloud_histogram(index=index, cloud_map=cloud_map, store=True)
+                return cloud_map
             except RasterioIOError:
                 pass
 
-        # try to retrieve path to s2 image
+        # If we failed to load cloud map from drive, calculate it from S2 image and save to drive if possible
+
+        # First, try to retrieve path to s2 image
         path_to_s2 = None
         if index:
             try:
@@ -175,33 +189,36 @@ class ImageUtils:
             except KeyError:
                 pass
 
-        # load s2 image if not loaded yet
+        # Then, if S2 image was not provided as argument already, try to load it from drive
         if s2_image is None:
             if path_to_s2 is None:
                 raise ValueError("Cloud not find the corresponding Sentinel-2 image in the dataset")
+
             try:
                 s2_image = self.read_tif(path_to_s2)
             except RasterioIOError:
                 raise ValueError("Could not find the corresponding Sentinel-2 image under the path from the dataset")
 
-        # at this point it is guaranteed that s2_image has been loaded
-        # calculate cloud map
+        # At this point it is guaranteed that either s2_image has been loaded, or an error was raised.
+
         s2_image = self.prepare_for_cloud_detector(s2_image)
         cloud_map = self.manager.cloud_detector.get_cloud_probability_maps(s2_image)
         cloud_map = cloud_map[np.newaxis, ...]
-        cloud_map[cloud_map < threshold] = 0
-        cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
+        # cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
 
-        # try to save cloud mask
-        # we can only save to .tif file if we have an example Sentinel-2 .tif file to copy its rasterio profile
+        # Try to save the newly computed cloud map to drive
+        # We can only save to .tif file if we have an example Sentinel-2 .tif file,
+        # so that we can copy its rasterio profile
         if cloud_map_path and path_to_s2:
             rasterio_profile = self.get_rasterio_profile(path_to_s2)
 
+            cloud_map_uint16 = (cloud_map * 10000).astype(np.uint16)  # convert to uint16 to save space
+
             self.save_tif(
                 filepath=cloud_map_path,
-                image=cloud_map,
+                image=cloud_map_uint16,
                 rasterio_profile=rasterio_profile,
-                dtype=rasterio.float32
+                dtype=rasterio.uint16
             )
 
         # try to store cloud percentage

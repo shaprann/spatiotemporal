@@ -1,5 +1,5 @@
 import os
-from os.path import split, relpath, isfile, isdir, join
+from os.path import split, relpath, isdir, join
 from pathlib import Path
 
 
@@ -103,7 +103,9 @@ class ImageFile:
         try:
             roi, tile, modality, timestep = directory.split(os.sep)
         except ValueError:
-            raise ValueError(f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {directory}")
+            raise ValueError(
+                f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {directory}"
+            )
 
         return dict(zip(
             self.manager.config['hierarchy_in_storage'],
@@ -145,8 +147,7 @@ class ImageFile:
             raise ValueError("Unable to read or save cloud maps: path to cloud maps was not provided.")
 
         if not isdir(self.manager.cloud_maps_dir):
-            raise ValueError(f"Unable to read or save cloud maps. "
-                             f"{self.manager.cloud_maps_dir} is not a valid directory.")
+            os.makedirs(self.manager.cloud_maps_dir, exist_ok=True)
 
     @property
     def cloud_map_index(self):
@@ -162,9 +163,13 @@ class ImageFile:
         if self.cloud_map:
             return self.filepath
 
+        return self.path_to_product(self.manager.cloud_maps_dir, modality="s2cloudmap")
+
+    def path_to_product(self, directory, modality):
+
         # here we use string join
         filename_content = [
-            "s2cloudmap",
+            modality.lower(),
             self.metadata["ROI"],
             self.metadata["tile"],
             "ImgNo",
@@ -177,10 +182,10 @@ class ImageFile:
 
         # here we use os.path.join
         directory_path_content = [
-            self.manager.cloud_maps_dir,
+            directory,
             self.metadata["ROI"],
             self.metadata["tile"],
-            "S2CLOUDMAP",
+            modality.upper(),
             self.metadata["timestep"]
         ]
         directory = join(*[str(value) for value in directory_path_content])
