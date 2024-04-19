@@ -506,7 +506,7 @@ class ImageUtils:
         return s2_image.clip(0, 10000) / 10000
 
     @staticmethod
-    def rescale(image, bands_min, bands_max):
+    def rescale(image, bands_min, bands_max, clip=False):
 
         if not image.ndim == 3:
             raise ValueError(f"Only accept images of shape [band, height, width]. "
@@ -518,16 +518,15 @@ class ImageUtils:
         bands_min = np.array(bands_min)[:, np.newaxis, np.newaxis]
         bands_max = np.array(bands_max)[:, np.newaxis, np.newaxis]
 
-        rescaled_image = image.clip(min=bands_min, max=bands_max)
-        rescaled_image = rescaled_image - bands_min
-        rescaled_image = rescaled_image / (bands_max - bands_min)
-        rescaled_image = rescaled_image - 0.5
-        rescaled_image = rescaled_image * 2
+        if clip:
+            image = image.clip(min=bands_min, max=bands_max)
+        image = image - bands_min
+        image = image / (bands_max - bands_min)
 
-        return rescaled_image
+        return image
 
     @classmethod
-    def rescale_s2(cls, s2_image):
+    def rescale_s2(cls, s2_image, clip=False):
 
         if not s2_image.shape[0] == 13:
             raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
@@ -535,11 +534,12 @@ class ImageUtils:
         return cls.rescale(
             image=s2_image,
             bands_min=cls.min_max_s2["min"],
-            bands_max=cls.min_max_s2["max"]
+            bands_max=cls.min_max_s2["max"],
+            clip=clip
         )
 
     @classmethod
-    def rescale_s1(cls, s1_image):
+    def rescale_s1(cls, s1_image, clip=False):
 
         if not s1_image.shape[0] == 2:
             raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
@@ -547,11 +547,12 @@ class ImageUtils:
         return cls.rescale(
             image=s1_image,
             bands_min=cls.min_max_s1["min"],
-            bands_max=cls.min_max_s1["max"]
+            bands_max=cls.min_max_s1["max"],
+            clip=clip
         )
 
     @staticmethod
-    def rescale_back(image, bands_min, bands_max, bands):
+    def rescale_back(image, bands_min, bands_max, bands=None):
 
         if not image.ndim == 3:
             raise ValueError("Image must have 3 dimensions")
@@ -559,16 +560,14 @@ class ImageUtils:
         bands_min = np.array(bands_min)[:, np.newaxis, np.newaxis]
         bands_max = np.array(bands_max)[:, np.newaxis, np.newaxis]
 
-        if bands:
+        if bands is not None:
             bands_min = bands_min[bands]
             bands_max = bands_max[bands]
 
-        back_rescaled_image = image / 2
-        back_rescaled_image = back_rescaled_image + 0.5
-        back_rescaled_image = back_rescaled_image * (bands_max - bands_min)
-        back_rescaled_image = back_rescaled_image + bands_min
+        image = image * (bands_max - bands_min)
+        image = image + bands_min
 
-        return back_rescaled_image
+        return image
 
     @classmethod
     def rescale_s2_back(cls, rescaled_s2_image, bands=None):
