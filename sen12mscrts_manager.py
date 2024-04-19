@@ -51,7 +51,9 @@ class Sen12mscrtsDatasetManager:
     @property
     def data(self):
         """ Getter method to prevent outer classes from editing the data """
-        return self._data
+        if self._data is None:
+            raise ValueError("Dataset contains no data yet. Try running 'load_dataset()' method first.")
+        return self._data.copy(deep=True)
 
     @property
     def has_cloud_maps(self):
@@ -68,7 +70,7 @@ class Sen12mscrtsDatasetManager:
         )
 
     def save_to_file(self, filepath):
-        self._data.to_csv(filepath)
+        self.data.to_csv(filepath)
 
     def get_paths_to_files(self):
         """
@@ -132,7 +134,8 @@ class Sen12mscrtsDatasetManager:
                 continue
         indices = np.concatenate(iloc_indices) if iloc_indices else []
 
-        return self.data.iloc[indices]
+        return dataframe.iloc[indices].copy(deep=True)
+
 
 # ####################### ImageUtils ###########################
 
