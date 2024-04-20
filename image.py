@@ -23,12 +23,6 @@ class ImageFile:
         self.image_type = self._detect_image_type()
         self._index = self._detect_index()
 
-        self._image = None
-
-    @property
-    def image(self):
-        return self._image
-
     @property
     def index(self):
         return self._index
