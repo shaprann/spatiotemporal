@@ -590,50 +590,6 @@ class ImageUtils:
             bands=bands
         )
 
-    @classmethod
-    def correlated_noise(cls, size=256, dim=2, exponent=2):
-
-        if not dim == 2:
-            raise NotImplementedError("Currently only works with dim=2")
-
-        white_noise = np.random.normal(size=tuple([size] * dim))
-
-        dist = (np.arange(size) - size / 2) ** 2
-
-        dist_tot = dist[np.newaxis, :] + dist[:, np.newaxis]
-        dist_tot = np.sqrt(dist_tot)
-        filt = dist_tot ** (exponent * dim / 2)
-        filt = filt / np.sum(filt)
-
-        wnf = np.fft.fftn(white_noise)
-        wnf = wnf * filt
-        result = np.fft.ifftn(wnf)
-        result = np.real(result)
-        result = (result - np.mean(result)) / np.std(result)
-
-        return result
-
-    @classmethod
-    def speckle_noise(cls, size=256, dim=2, exponent=2, strength=1.0):
-
-        noise = cls.correlated_noise(size, dim, exponent)
-        sorted_noise = np.argsort(noise.flatten())
-        rayleigh = np.random.rayleigh(size=(256, 256)) / 1.26
-        sorted_rayleigh = np.argsort(rayleigh.flatten())
-        noise_rescaled = noise.flatten()
-        noise_rescaled[sorted_noise] = rayleigh.flatten()[sorted_rayleigh]
-        noise_rescaled = noise_rescaled.reshape((256, 256))
-
-        noise_rescaled = noise_rescaled - 1
-        noise_rescaled = noise_rescaled * strength
-        noise_rescaled = noise_rescaled + 1
-
-        return noise_rescaled
-
-    @classmethod
-    def add_speckle(cls, image, strength=0.4):
-        return image + 10 * np.log10(cls.speckle_noise(strength=strength))
-
     @staticmethod
     def fillnan(image):
         image = image
