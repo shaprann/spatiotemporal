@@ -14,7 +14,7 @@ from scipy.ndimage import gaussian_filter
 from threading import Lock
 
 
-class Sen12mscrtsDatasetManager:
+class DatasetManager:
     """
     File manager which finds SEN12MS-CR-TS dataset files, parses some metadata, and stores it in the registry.
     Registry is stored as a MultiIndex pd.DataFrame under the ._data variable.
