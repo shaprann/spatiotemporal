@@ -151,14 +151,18 @@ class DatasetManager:
         self.build_dataframe()
         self.initialize_cloud_histograms()
 
-    def load_from_file(self, filepath):
+    def load_from_file(self, filepath=None):
+        if filepath is None:
+            filepath = join(self.project_directory, "config", "dataset_manager.csv")
         self._data = pd.read_csv(
             filepath,
             index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"]
         )
         self.initialize_cloud_histograms()
 
-    def save_to_file(self, filepath):
+    def save_to_file(self, filepath=None):
+        if filepath is None:
+            filepath = join(self.project_directory, "config", "dataset_manager.csv")
         self.data.to_csv(filepath)
 
     def get_paths_to_files(self):
