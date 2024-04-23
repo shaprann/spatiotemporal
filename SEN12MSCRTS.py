@@ -316,7 +316,8 @@ class ImageUtils:
             cloud_map_path=None,
             s2_image=None,
             index=None,
-            store_cloud_histogram=True
+            store_cloud_histogram=True,
+            overwrite=False
     ):
 
         # if index is provided, ignore cloud_map_path argument, get path from the dataset instead, and overwrite it
@@ -327,14 +328,14 @@ class ImageUtils:
                 raise ValueError(f"Can not find path to cloud mask in the dataset using provided index: {index}")
 
         # if only cloud_map_path is provided, retrieve dataset index for the cloud map path
-        if cloud_map_path and not index:
+        if cloud_map_path is not None and index is None:
             index = ImageFile(manager=self.manager, filepath=cloud_map_path).short_index
             if index not in self.manager.data.index:
                 raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
 
         # now we either have both index and cloud map path, or we have neither
         # if we have the cloud map path, try simply loading cloud map from the drive
-        if cloud_map_path:
+        if not overwrite and cloud_map_path is not None:
             try:
                 cloud_map_uint16 = self.read_tif(filepath=cloud_map_path)
                 cloud_map = (cloud_map_uint16 / 10000.0).astype(np.float32)  # convert from uint16 back to float32
@@ -348,7 +349,7 @@ class ImageUtils:
 
         # First, try to retrieve path to s2 image
         path_to_s2 = None
-        if index:
+        if index is not None:
             try:
                 path_to_s2 = self.manager.data.loc[index]["S2"]
             except KeyError:
