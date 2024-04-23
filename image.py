@@ -20,7 +20,7 @@ class ImageFile:
         self._check_metadata_consistency()
         self.metadata = {**self.filename_metadata, **self.filepath_metadata}  # merge two dicts with metadata
 
-        self.image_type = self._detect_image_type()
+        self._modality = self._detect_modality()
         self._index = self._detect_index()
 
     @property
@@ -33,11 +33,11 @@ class ImageFile:
 
     @property
     def optical(self):
-        return True if self.image_type == "S2" else False
+        return True if self._modality == "S2" else False
 
     @property
     def cloud_map(self):
-        return True if self.image_type == "S2CLOUDMAP" else False
+        return True if self._modality == "S2CLOUDMAP" else False
 
     @classmethod
     def _handle_paths(cls, filepath, directory, filename):
@@ -67,10 +67,10 @@ class ImageFile:
         try:
             modality, roi, tile, _, timestep, date, _, patch = filename.split("_")  # extract information
         except ValueError as err:
-            raise ValueError(f"Could not parse {self.manager.config['filename_contains']} from filename {filename}")
+            raise ValueError(f"Could not parse {self.manager.config['filename_metadata']} from filename {filename}")
 
         return dict(zip(
-            self.manager.config['filename_contains'],
+            self.manager.config['filename_metadata'],
             (modality.upper(), roi, int(tile), int(timestep), date, int(patch))
         ))
 
@@ -98,11 +98,11 @@ class ImageFile:
             roi, tile, modality, timestep = directory.split(os.sep)
         except ValueError:
             raise ValueError(
-                f"Could not parse {self.manager.config['hierarchy_in_storage']} from directory path {directory}"
+                f"Could not parse {self.manager.config['filepath_metadata']} from directory path {directory}"
             )
 
         return dict(zip(
-            self.manager.config['hierarchy_in_storage'],
+            self.manager.config['filepath_metadata'],
             (roi, int(tile), modality, int(timestep))
         ))
 
@@ -114,15 +114,15 @@ class ImageFile:
                                  f"Filename {metadata} is {self.filename_metadata[metadata]} \n"
                                  f"Location {metadata} is {self.filepath_metadata[metadata]}")
 
-    def _detect_image_type(self):
-        self._check_image_type()
+    def _detect_modality(self):
+        self._check_modality()
         return self.metadata["modality"]
 
-    def _check_image_type(self):
-        if not self.metadata["modality"] in self.manager.config['dataset_content']:
+    def _check_modality(self):
+        if not self.metadata["modality"] in self.manager.config['modalities']:
             raise ValueError(
-                f"Detected a .tif image of invalid type. "
-                f"Allowed types in the dataset: {self.manager.config['dataset_content']}. "
+                f"Detected a .tif image of invalid modality. "
+                f"Allowed modalities in the dataset: {self.manager.config['modalities']}. "
                 f"Got instead: {self.metadata['modality']}"
             )
 
@@ -135,7 +135,7 @@ class ImageFile:
             return
 
         if not self.optical:
-            raise ValueError(f"Can only generate cloud maps for optical images. Got instead: {self.image_type}")
+            raise ValueError(f"Can only generate cloud maps for optical images. Got instead: {self._modality}")
 
         if not self.manager.cloud_maps_dir:
             raise ValueError("Unable to read or save cloud maps: path to cloud maps was not provided.")

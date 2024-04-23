@@ -6,18 +6,18 @@ dataset_index:
   - "timestep"
   - "modality"
 
-dataset_content:
+modalities:
   - "S1"
   - "S2"
   - "S2CLOUDMAP"
 
-hierarchy_in_storage:
+filepath_metadata:
   - "ROI"
   - "tile"
   - "modality"
   - "timestep"
 
-filename_contains:
+filename_metadata:
   - "modality"
   - "ROI"
   - "tile"

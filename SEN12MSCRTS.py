@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
-import os
-from os import makedirs
+from os import walk, makedirs
 from os.path import join, isdir, dirname, abspath
 import warnings
 import yaml
@@ -21,7 +20,7 @@ class DatasetManager:
     """
 
     # get current project directory
-    project_directory = os.path.abspath(os.path.dirname(__file__))
+    project_directory = abspath(dirname(__file__))
 
     # load dataset config file
     with open(join(project_directory, "config/sen12mscrts.yaml"), 'r') as file:
@@ -168,9 +167,9 @@ class DatasetManager:
         :return:
         """
 
-        with tqdm(total=sum([len(files) for r, d, files in os.walk(self.root_dir)])) as pbar:
+        with tqdm(total=sum([len(files) for r, d, files in walk(self.root_dir)])) as pbar:
 
-            for current_path, directories, filenames in os.walk(self.root_dir):
+            for current_path, directories, filenames in walk(self.root_dir):
 
                 for filename in filenames:
 
@@ -300,7 +299,7 @@ class DatasetManager:
 
 class ImageUtils:
 
-    project_directory = os.path.abspath(os.path.dirname(__file__))
+    project_directory = abspath(dirname(__file__))
     min_max_s2 = pd.read_csv(join(project_directory, "stats/S2_99_percentile_min_max.csv"), index_col="band")
     min_max_s1 = pd.read_csv(join(project_directory, "stats/S1_99_percentile_min_max.csv"), index_col="band")
 
