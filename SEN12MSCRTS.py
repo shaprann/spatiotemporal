@@ -1,4 +1,5 @@
 from .imagefile import ImageFile
+from .statistics_manager import StatisticsManager
 
 import yaml
 import rasterio
@@ -27,9 +28,6 @@ class DatasetManager:
     with open(join(project_directory, "config/sen12mscrts.yaml"), 'r') as file:
         config = yaml.safe_load(file)
 
-    # load definition of data subsets (regions and test/val splits)
-    subsets = pd.read_csv(join(project_directory, "config/subsets.csv"), index_col=["ROI", "tile"])
-
     def __init__(
             self,
             root_dir,
@@ -43,9 +41,13 @@ class DatasetManager:
         self.cloud_maps_dir = cloud_maps_dir
 
         self.utils = ImageUtils(manager=self)
+        self.stats = StatisticsManager(manager=self)
 
         self._files = []
         self._data = None
+
+        self.subsets = None
+        self.initialize_subsets()
 
         self.cloud_detector = S2PixelCloudDetectorWrapper(
             threshold=cloud_probability_threshold,
@@ -128,18 +130,42 @@ class DatasetManager:
         # put modality into columns (creates a pd.DataFrame)
         self._data = self._data.unstack("modality")
 
-    def data_subset(self, split=None, only_resampled=True):
-        return self.get_subset(self.data, split=split, only_resampled=only_resampled)
+    def initialize_subsets(self):
+        try:
+            self.subsets = pd.read_csv(join(self.project_directory, "config", "subsets.csv"), index_col=["ROI", "tile"])
+        except FileNotFoundError as err:
+            raise FileNotFoundError("Can not initialize dataset subsets: CSV file not found") from err
 
-    def get_subset(self, dataframe, split=None, only_resampled=True):
+        try:
+            self.subsets = self.subsets.join(self.stats.S1_resampled)
+        except FileNotFoundError:
+            pass
+
+        try:
+            self.subsets = self.subsets.join(self.stats.S2_resampled)
+        except FileNotFoundError:
+            pass
+
+    def data_subset(self, split=None, s1_resampled=True):
+        return self.get_subset(self.data, split=split, s1_resampled=s1_resampled)
+
+    def get_subset(self, dataframe, split=None, region=None, s1_resampled=None):
+
+        subset = self.subsets
 
         if split is not None:
-            subset = self.subsets[self.subsets["split"] == split]
-        else:
-            subset = self.subsets
-
-        if only_resampled:
-            subset = subset[subset["resampled"] == True]
+            subset = subset[subset["split"] == split]
+        if region is not None:
+            subset = subset[subset["region"] == region]
+        if s1_resampled is not None:
+            try:
+                subset = subset[subset["S1_resampled"] == s1_resampled]
+            except KeyError as err:
+                raise FileNotFoundError("Can not select S1-resampled tiles: "
+                                        "CSV file with resampling statistics is missing. "
+                                        "You need to first calculate resampling statistics "
+                                        "using DatasetManager.stats.S1_resampled "
+                                        "and then call initialize_subsets()") from err
 
         index_tuples = [index_tuple for index_tuple in subset.index]
 
