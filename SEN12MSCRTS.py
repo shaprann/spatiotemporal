@@ -1,6 +1,5 @@
 from .imagefile import ImageFile
 
-import warnings
 import yaml
 import rasterio
 import numpy as np
@@ -13,7 +12,6 @@ from skimage.morphology import dilation, disk
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from s2cloudless.utils import MODEL_BAND_IDS
-from threading import Lock
 
 
 class DatasetManager:
@@ -32,14 +30,10 @@ class DatasetManager:
     # load definition of data subsets (regions and test/val splits)
     subsets = pd.read_csv(join(project_directory, "config/subsets.csv"), index_col=["ROI", "tile"])
 
-    # define how cloud masks are calculated from cloud probability maps
-    _cloud_probability_bins = np.arange(start=0.0, stop=1.0+0.05, step=0.05, dtype=np.float64)
-
     def __init__(
             self,
             root_dir,
             cloud_maps_dir=None,
-            cloud_histograms_csv=None,
             cloud_probability_threshold=None
     ):
 
@@ -47,16 +41,12 @@ class DatasetManager:
             raise ValueError(f"Provided root directory does not exist: {root_dir}")
         self.root_dir = root_dir
         self.cloud_maps_dir = cloud_maps_dir
-        self.cloud_histograms_csv = cloud_histograms_csv
 
-        self._cloud_probability_threshold_index = self.locate_cloud_probability_threshold(cloud_probability_threshold)
+        self.utils = ImageUtils(manager=self)
 
         self._files = {}
         self._data = None
-        self._cloud_histograms = None
-        self._save_cloud_histograms = True
 
-        self.utils = ImageUtils(manager=self)
         self.cloud_detector = S2PixelCloudDetectorWrapper(
             threshold=cloud_probability_threshold,
             all_bands=True,
@@ -72,14 +62,6 @@ class DatasetManager:
         return self._data.copy(deep=True)
 
     @property
-    def cloud_histograms(self):
-        """ Getter method to prevent outer classes from editing the cloud histograms DataFrame """
-        if self._cloud_histograms is None:
-            raise ValueError("Dataset is not initialized yet. "
-                             "Try running 'load_dataset()' method first.")
-        return self._cloud_histograms.copy(deep=True)
-
-    @property
     def has_cloud_maps(self):
         return self._data is not None and "S2CLOUDMAP" in self._data
 
@@ -93,58 +75,9 @@ class DatasetManager:
     def cloud_probability_threshold(self, threshold):
         self.cloud_detector.threshold = threshold
 
-    def get_cloud_histogram(self, index):
-        """ Getter method to get a single cloud histogram """
-        if self._cloud_histograms is None:
-            raise ValueError("Dataset is not initialized yet. "
-                             "Try running 'load_dataset()' method first.")
-
-        try:
-            cloud_histogram = self._cloud_histograms.loc[index].copy(deep=True)
-        except KeyError:
-            raise ValueError("Provided index does not correspond to any index in the dataset")
-
-        # if dataset has no cloud histogram stored, calculate it
-        if cloud_histogram.isna().any():
-            cloud_histogram = self.utils.calculate_cloud_histogram(index=index, store=True)
-
-        return cloud_histogram
-
-    def write_cloud_histogram(self, index, cloud_histogram):
-        """ Setter method to store a single cloud histogram into the dataset"""
-
-        cloud_histogram = np.array(cloud_histogram, dtype=np.int64)
-
-        if self._cloud_histograms is None:
-            raise ValueError("Can not write cloud histogram: dataset is not initialized yet. "
-                             "Try running 'load_dataset()' method first.")
-        if not cloud_histogram.shape == self._cloud_probability_bins[1:].shape:
-            raise ValueError("Can not set cloud histogram: Provided values are incorrect")
-        if np.isnan(cloud_histogram).any():
-            raise ValueError("Can not set cloud histogram: Provided values contain NaNs")
-
-        # write cloud histogram to dataset
-        self._cloud_histograms.loc[index] = cloud_histogram
-
-        # write cloud histogram to drive if necessary
-        if not self._save_cloud_histograms:
-            return
-        elif self.cloud_histograms_csv is not None:
-            self._cloud_histograms.loc[[index]].to_csv(
-                self.cloud_histograms_csv,
-                mode="a",
-                header=False,
-                float_format="%.4f"
-            )
-
-    def get_cloud_percentage(self, index):
-
-        raise NotImplementedError()
-
     def load_dataset(self):
         self.get_paths_to_files()
         self.build_dataframe()
-        self.initialize_cloud_histograms()
 
     def load_from_file(self, filepath=None):
         if filepath is None:
@@ -153,7 +86,6 @@ class DatasetManager:
             filepath,
             index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"]
         )
-        self.initialize_cloud_histograms()
 
     def save_to_file(self, filepath=None):
         if filepath is None:
@@ -205,8 +137,6 @@ class DatasetManager:
     def data_subset(self, split=None, only_resampled=True):
         return self.get_subset(self.data, split=split, only_resampled=only_resampled)
 
-    def cloud_histograms_subset(self, split=None, only_resampled=True):
-        return self.get_subset(self.cloud_histograms, split=split, only_resampled=only_resampled)
 
     def get_subset(self, dataframe, split=None, only_resampled=True):
 
@@ -230,69 +160,6 @@ class DatasetManager:
 
         return dataframe.iloc[indices].copy(deep=True)
 
-    def initialize_cloud_histograms(self):
-        self._cloud_histograms = pd.DataFrame(
-            index=self.data.index,
-            columns=self._cloud_probability_bins[1:],
-            dtype=pd.Int64Dtype()
-        )
-
-        if self.cloud_histograms_csv is not None:
-            self.connect_to_cloud_histograms_csv()
-
-    def connect_to_cloud_histograms_csv(self):
-
-        try:
-            _ = self.data  # this throws an error if data is not initialized
-            _ = self.cloud_histograms  # this throws an error if cloud histograms are not initialized
-        except ValueError as error:
-            raise error
-
-        if self.cloud_histograms_csv is None:
-            raise ValueError("Failed to connect to Cloud Histogram CSV: no path to CSV file is provided")
-
-        try:
-            cloud_histograms_from_csv = pd.read_csv(
-                self.cloud_histograms_csv,
-                index_col=[idx for idx in self.config["dataset_index"] if not idx == "modality"],
-            )
-            cloud_histograms_from_csv.columns = cloud_histograms_from_csv.columns.astype(np.float64)
-            cloud_histograms_from_csv = cloud_histograms_from_csv.astype(pd.Int64Dtype())
-            cloud_histograms_from_csv = cloud_histograms_from_csv.dropna(how="any", axis=0)
-            self.check_cloud_histograms(cloud_histograms_from_csv)
-            self._cloud_histograms.loc[cloud_histograms_from_csv.index] = cloud_histograms_from_csv.values
-            self.save_cloud_histograms()  # this way we sort the rows in the .csv file if they were unsorted before
-        except FileNotFoundError:
-            warnings.warn("Failed to connect to Cloud Histograms CSV: provided CSV file does not exist. "
-                          "Create a new CSV file instead.")
-            self.save_cloud_histograms()  # this way we create a new .csv file
-
-    def check_cloud_histograms(self, cloud_histograms_df):
-
-        try:
-            columns_valid = np.allclose(cloud_histograms_df.columns, self._cloud_probability_bins[1:])
-        except ValueError:
-            raise ValueError("Columns of Cloud Histograms CSV are not valid: wrong length")
-
-        if not columns_valid:
-            raise ValueError("Columns of Cloud Histograms CSV are not valid: wrong values")
-
-        try:
-            self.cloud_histograms.loc[cloud_histograms_df.index]
-        except KeyError:
-            raise ValueError("Indices of cloud Histograms CSV do not correspond to the indices in the dataset")
-
-    def save_cloud_histograms(self):
-        self.cloud_histograms.dropna(how="any", axis=0).to_csv(
-            self.cloud_histograms_csv,
-            float_format="%.4f"
-        )
-
-    def pause_saving_histograms(self):
-        lock = CloudHistogramLock(self)
-        return lock
-
-
 # ####################### ImageUtils ###########################
 
 
@@ -310,9 +177,14 @@ class ImageUtils:
             cloud_map_path=None,
             s2_image=None,
             index=None,
-            store_cloud_histogram=True,
+            try_load=True,
             overwrite=False
     ):
+        """
+        Cloud maps are computed and stored in the same format as used by Google Earth Engine:
+        https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY#description
+        Namely, probabilities are rescaled to [0..100], discretized to uint8, and value 255 is used as NOVALUE mask
+        """
 
         # if index is provided, ignore cloud_map_path argument, get path from the dataset instead, and overwrite it
         if index is not None:
@@ -327,15 +199,11 @@ class ImageUtils:
             if index not in self.manager.data.index:
                 raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
 
-        # now we either have both index and cloud map path, or we have neither
-        # if we have the cloud map path, try simply loading cloud map from the drive
-        if not overwrite and cloud_map_path is not None:
+        # now we either have both index and cloud_map_path, or we have neither
+        # if we have the cloud_map_path, try simply loading cloud map from the drive
+        if try_load and cloud_map_path is not None:
             try:
-                cloud_map_uint16 = self.read_tif(filepath=cloud_map_path)
-                cloud_map = (cloud_map_uint16 / 10000.0).astype(np.float32)  # convert from uint16 back to float32
-                if store_cloud_histogram and index is not None:
-                    _ = self.calculate_cloud_histogram(index=index, cloud_map=cloud_map, store=True)
-                return cloud_map
+                return self.read_tif(filepath=cloud_map_path)
             except RasterioIOError:
                 pass
 
@@ -361,73 +229,34 @@ class ImageUtils:
 
         # At this point it is guaranteed that either s2_image has been loaded, or an error was raised.
 
-        s2_image = self.prepare_for_cloud_detector(s2_image)
+        # we can finally compute the cloud map from s2_image
         cloud_map = self.manager.cloud_detector.get_cloud_probability_maps(s2_image)
-        cloud_map = cloud_map[np.newaxis, ...]
-        # cloud_map = gaussian_filter(cloud_map, sigma=2).astype(np.float32)
 
         # Try to save the newly computed cloud map to drive
-        # We can only save to .tif file if we have an example Sentinel-2 .tif file,
-        # so that we can copy its rasterio profile
-        if cloud_map_path and path_to_s2:
+        # We can only save to .tif if we have an example Sentinel-2 .tif file to copy its rasterio profile
+        if overwrite and cloud_map_path is not None and path_to_s2 is not None:
             rasterio_profile = self.get_rasterio_profile(path_to_s2)
-
-            cloud_map_uint16 = (cloud_map * 10000).astype(np.uint16)  # convert to uint16 to save space
-
             self.save_tif(
                 filepath=cloud_map_path,
-                image=cloud_map_uint16,
+                image=cloud_map,
                 rasterio_profile=rasterio_profile,
-                dtype=rasterio.uint16
+                dtype=rasterio.uint8
             )
-
-        # Try to save cloud histogram to drive and to the dataset
-        if store_cloud_histogram and index is not None:
-            _ = self.calculate_cloud_histogram(index=index, cloud_map=cloud_map, store=True)
 
         return cloud_map
 
-    def get_categorical_cloud_map(
-            self,
-            cloud_map=None,
-            cloud_map_path=None,
-            s2_image=None,
-            index=None,
-            store_cloud_histogram=True
-    ):
-        if cloud_map is None:
-            try:
-                cloud_map = self.get_cloud_map(
-                    cloud_map_path=cloud_map_path,
-                    s2_image=s2_image,
-                    index=index,
-                    store_cloud_histogram=store_cloud_histogram
-                )
-            except ValueError as err:
-                raise err
-
-        left_bin_edges = self.manager.cloud_probability_bins[:-1].reshape((1, 1, 1, -1))  # shape=[1,   1,   1, 20]
-        right_bin_edges = self.manager.cloud_probability_bins[1:].reshape((1, 1, 1, -1))  # shape=[1,   1,   1, 20]
-        cloud_map = cloud_map[..., np.newaxis]                                          # shape=[1, 256, 256,  1]
-
-        categorical_cloud_map = (left_bin_edges <= cloud_map) & (cloud_map < right_bin_edges)
-
-        return categorical_cloud_map                                                    # shape=[1, 256, 256, 20]
-
     def get_cloud_mask(
             self,
+            threshold=None,
+            average_over=None,
+            dilation_size=None,
             cloud_map=None,
             cloud_map_path=None,
             s2_image=None,
             index=None,
-            store_cloud_histogram=True
+            try_load=True,
+            overwrite=False,
     ):
-        try:
-            # all histogram bins on the left of threshold are labeled False, on the right True
-            # a bin is defined as [left, right), therefore the threshold value itself belongs to the right bin
-            cloud_probability_threshold = self.manager.cloud_probability_threshold
-        except ValueError as err:
-            raise err
 
         if cloud_map is None:
             try:
@@ -435,20 +264,19 @@ class ImageUtils:
                     cloud_map_path=cloud_map_path,
                     s2_image=s2_image,
                     index=index,
-                    store_cloud_histogram=store_cloud_histogram
+                    try_load=try_load,
+                    overwrite=overwrite
                 )
             except ValueError as err:
-                raise err
+                raise ValueError("Can not calculate cloud mask, "
+                                 "because reading or calculating cloud probability maps failed") from err
 
-        return cloud_map >= cloud_probability_threshold  # bins are [left, right), therefore >= and not =
-
-    def calculate_cloud_histogram(self, index, cloud_map=None, store=True):
-        if cloud_map is None:
-            cloud_map = self.get_cloud_map(index=index, store_cloud_histogram=False)
-        cloud_histogram, _ = np.histogram(cloud_map, bins=self.manager.cloud_probability_bins, density=False)
-        if store:
-            self.manager.write_cloud_histogram(index, cloud_histogram)
-        return cloud_histogram
+        return self.manager.cloud_detector.get_mask_from_prob(
+            cloud_map,
+            threshold=threshold,
+            average_over=average_over,
+            dilation_size=dilation_size
+        )
 
     @staticmethod
     def read_tif(filepath):
@@ -597,26 +425,6 @@ class ImageUtils:
         return image
 
 
-# ####################### CloudHistogramLock ###########################
-
-# TODO: locking cloud histograms does not work. Find out what is the problem
-class CloudHistogramLock:
-
-    def __init__(self, manager, save_step=5000):
-        self.manager = manager
-        self.save_step = save_step
-
-        self.counter = 0
-        self.counter_lock = Lock()
-
-    def __enter__(self):
-        self.manager._buffer_cloud_histograms = self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.manager._buffer_cloud_histograms = None
-        self.manager.save_cloud_histograms()
-
-
 # ######################## S2PixelCloudDetectorWrapper ##################
 
 class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
@@ -625,10 +433,37 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
         super().__init__(*args, **kwargs)
         self.MODEL_BAND_IDS = MODEL_BAND_IDS
 
+    def check_data(self, data):
+        if not data.ndim == 3:
+            raise ValueError(f"This cloud detector only accepts single images with shape [band, height, width]. "
+                             f"Got instead: shape={data.shape}")
+        if not data.shape[0] in [13, len(self.MODEL_BAND_IDS)]:
+            raise ValueError(f"This cloud detector only accepts single images with shape [band, height, width] "
+                             f"with band dimension either 13 or {len(self.MODEL_BAND_IDS)}."
+                             f"Got instead: shape={data.shape}, n_bands={data.shape[0]}")
+
     @staticmethod
     def prepare_for_cloud_detector(data):
         data = ImageUtils.bands_last(data)
         return data.clip(0, 10000) / 10000
+
+    def get_cloud_probability_maps(self, data, **kwargs):
+        """
+        Cloud maps are computed and stored in the same format as used by Google Earth Engine:
+        https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_CLOUD_PROBABILITY#description
+        Namely, probabilities are rescaled to [0..100], discretized to uint8, and value 255 is used as NOVALUE mask
+        """
+        self.check_data(data)
+        novalue_mask = ~(data[self.MODEL_BAND_IDS] != 0).prod(axis=0, dtype=bool)
+        data = self.prepare_for_cloud_detector(data)
+
+        cloud_probability_map = super().get_cloud_probability_maps(data)
+
+        # convert probabilities to [0..100] range and discretize, e.g. convert probability to percentage
+        cloud_percentage_map = np.rint(cloud_probability_map * 100).astype(np.uint8)
+        cloud_percentage_map[novalue_mask] = 255
+        cloud_percentage_map = cloud_percentage_map[np.newaxis, ...]
+        return cloud_percentage_map
 
     def get_mask_from_prob(
             self,
@@ -657,11 +492,15 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
         if is_single_temporal:
             cloud_probs = cloud_probs[np.newaxis, ...]
 
-        threshold = self.threshold if threshold is None else threshold
-        conv_filter = self.conv_filter if average_over is None else disk(average_over) / np.sum(disk(average_over))
-        average_over = self.average_over if average_over is None else average_over
-        dilation_filter = self.dilation_filter if dilation_size is None else disk(dilation_size)
-        dilation_size = self.dilation_size if dilation_size is None else dilation_size
+        threshold, conv_filter, average_over, dilation_filter, dilation_size = self._handle_mask_parameters(
+            threshold=threshold,
+            average_over=average_over,
+            dilation_size=dilation_size
+        )
+
+        # handle NOVALUE pixels
+        novalue_masks = cloud_probs == 255
+        cloud_probs[novalue_masks] = 100
 
         if average_over is not None:
             cloud_probs = np.asarray(
@@ -674,8 +513,25 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
             cloud_masks = np.asarray(
                 [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=np.uint8
             )
+            novalue_masks = np.asarray(
+                [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=np.uint8
+            )
+
+        # handle NOVALUE pixels
+        cloud_masks[novalue_masks] = 255
 
         if is_single_temporal:
             return cloud_masks.squeeze(axis=0)
 
         return cloud_masks
+
+    def _handle_mask_parameters(self, threshold, average_over, dilation_size):
+
+        threshold = self.threshold if threshold is None else threshold
+        conv_filter = self.conv_filter if average_over is None else disk(average_over) / np.sum(disk(average_over))
+        average_over = self.average_over if average_over is None else average_over
+        dilation_filter = self.dilation_filter if dilation_size is None else disk(dilation_size)
+        dilation_size = self.dilation_size if dilation_size is None else dilation_size
+
+        return threshold, conv_filter, average_over, dilation_filter, dilation_size
+
