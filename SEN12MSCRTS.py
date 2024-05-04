@@ -6,11 +6,13 @@ import rasterio
 import numpy as np
 import pandas as pd
 from os import walk, makedirs
-from os.path import join, isdir, dirname, abspath
+from os.path import join, isdir, dirname, abspath, isfile
 from tqdm import tqdm
+from scipy.ndimage import convolve
+from skimage.morphology import dilation, disk
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
-from scipy.ndimage import gaussian_filter
+from s2cloudless.utils import MODEL_BAND_IDS
 from threading import Lock
 
 
@@ -54,8 +56,13 @@ class DatasetManager:
         self._cloud_histograms = None
         self._save_cloud_histograms = True
 
-        self.cloud_detector = S2PixelCloudDetector(threshold=0.4, all_bands=True, average_over=4, dilation_size=2)
         self.utils = ImageUtils(manager=self)
+        self.cloud_detector = S2PixelCloudDetectorWrapper(
+            threshold=cloud_probability_threshold,
+            all_bands=True,
+            average_over=4,
+            dilation_size=2
+        )
 
     @property
     def data(self):
@@ -78,13 +85,13 @@ class DatasetManager:
 
     @property
     def cloud_probability_threshold(self):
-        if self._cloud_probability_threshold_index is None:
-            raise ValueError("Dataset has no cloud probability threshold stored")
-        return self._cloud_probability_bins[1:-1][self._cloud_probability_threshold_index]
+        if self.cloud_detector.threshold is None:
+            raise ValueError("Cloud probability threshold has not been set yet")
+        return self.cloud_detector.threshold
 
-    @property
-    def cloud_probability_bins(self):
-        return self._cloud_probability_bins.copy()
+    @cloud_probability_threshold.setter
+    def cloud_probability_threshold(self, threshold):
+        self.cloud_detector.threshold = threshold
 
     def get_cloud_histogram(self, index):
         """ Getter method to get a single cloud histogram """
@@ -132,20 +139,7 @@ class DatasetManager:
 
     def get_cloud_percentage(self, index):
 
-        if self._cloud_probability_threshold_index is None:
-            raise ValueError("Dataset has no cloud probability threshold stored.")
-
-        histogram = self.get_cloud_histogram(index)
-        return histogram.iloc[self._cloud_probability_threshold_index+1:].sum() / histogram.sum()
-
-    def locate_cloud_probability_threshold(self, threshold):
-        if threshold is None:
-            return None
-        closest_threshold = np.isclose(threshold, self._cloud_probability_bins[1:-1])  # [1:-1] --> [0.05, ..., 0.95]
-        if not closest_threshold.any():
-            raise ValueError(f"Threshold value {threshold:.4f} is not allowed. "
-                             f"Select one of the following values instead: {self._cloud_probability_bins[1:-1]}")
-        return np.argwhere(closest_threshold).item()
+        raise NotImplementedError()
 
     def load_dataset(self):
         self.get_paths_to_files()
@@ -621,3 +615,67 @@ class CloudHistogramLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.manager._buffer_cloud_histograms = None
         self.manager.save_cloud_histograms()
+
+
+# ######################## S2PixelCloudDetectorWrapper ##################
+
+class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.MODEL_BAND_IDS = MODEL_BAND_IDS
+
+    @staticmethod
+    def prepare_for_cloud_detector(data):
+        data = ImageUtils.bands_last(data)
+        return data.clip(0, 10000) / 10000
+
+    def get_mask_from_prob(
+            self,
+            cloud_probs,
+            threshold=None,
+            average_over=None,
+            dilation_size=None
+    ):
+        """
+        Replaces the get_mask_from_prob() method of S2PixelCloudDetector with following changes:
+        - allows to specify different average_over and dilation_size arguments
+        - uses np.uint8 instead of np.int8
+        - uses int percentages [0..100] instead of floats [0.0..1.0]
+
+        :param cloud_probs: cloud probability map
+        :type cloud_probs: numpy array of cloud probabilities (n_images, n, m) or (n, m)
+        :param threshold: A float from [0..100] specifying threshold
+        :param average_over: (optional) replaces the value stored in cloud detector
+        :param dilation_size: (optional) replaces the value stored in cloud detector
+        :type threshold: float
+        :return: raster cloud mask
+        :rtype: numpy array (n_images, n, m) or (n, m)
+        """
+
+        is_single_temporal = cloud_probs.ndim == 2
+        if is_single_temporal:
+            cloud_probs = cloud_probs[np.newaxis, ...]
+
+        threshold = self.threshold if threshold is None else threshold
+        conv_filter = self.conv_filter if average_over is None else disk(average_over) / np.sum(disk(average_over))
+        average_over = self.average_over if average_over is None else average_over
+        dilation_filter = self.dilation_filter if dilation_size is None else disk(dilation_size)
+        dilation_size = self.dilation_size if dilation_size is None else dilation_size
+
+        if average_over is not None:
+            cloud_probs = np.asarray(
+                [convolve(cloud_prob, conv_filter) for cloud_prob in cloud_probs], dtype=np.uint8
+            )
+
+        cloud_masks = (cloud_probs > threshold).astype(np.uint8)
+
+        if dilation_size is not None:
+            cloud_masks = np.asarray(
+                [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=np.uint8
+            )
+
+        if is_single_temporal:
+            return cloud_masks.squeeze(axis=0)
+
+        return cloud_masks
