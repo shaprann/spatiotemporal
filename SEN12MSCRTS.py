@@ -1,4 +1,4 @@
-from .image import ImageFile
+from .imagefile import ImageFile
 
 import warnings
 import yaml
