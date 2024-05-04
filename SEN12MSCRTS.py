@@ -116,6 +116,7 @@ class DatasetManager:
 
                     # add path to cloud map if applicable
                     # if no .tif image is present at that path, it will be used as target path to generate cloud map
+                    # TODO: this will not work if cloud maps are in the same folder as other images.
                     if self.cloud_maps_dir and image_file.optical:
                         self._files[image_file.cloud_map_index] = image_file.path_to_cloud_map
 

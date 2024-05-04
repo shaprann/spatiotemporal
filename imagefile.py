@@ -1,6 +1,5 @@
 import os
-from os.path import split, relpath, isdir, join
-from pathlib import Path
+from os.path import split, isdir, join
 
 
 class ImageFile:
@@ -83,23 +82,11 @@ class ImageFile:
             {"ROI": "ROIs1868", "tile": 100, "modality: "S2", "timestep": 9}
         """
 
-        if Path(self.manager.root_dir) in Path(self.directory).parents:
-            root_dir = self.manager.root_dir
-        elif Path(self.manager.cloud_maps_dir) in Path(self.directory).parents:
-            root_dir = self.manager.cloud_maps_dir
-        else:
-            raise ValueError(f"Expected a path from root directory of from cloud path directory. "
-                             f"Received instead: {self.directory}")
-
-        # convert to relative path (removes root_dir from the path)
-        directory = relpath(self.directory, root_dir)
-
         try:
-            roi, tile, modality, timestep = directory.split(os.sep)
-        except ValueError:
-            raise ValueError(
-                f"Could not parse {self.manager.config['filepath_metadata']} from directory path {directory}"
-            )
+            roi, tile, modality, timestep = self.directory.split(os.sep)[-4:]
+        except ValueError as err:
+            raise ValueError(f"Could not parse {self.manager.config['filepath_metadata']} "
+                             f"from directory path {self.directory}") from err
 
         return dict(zip(
             self.manager.config['filepath_metadata'],
@@ -140,6 +127,7 @@ class ImageFile:
         if not self.manager.cloud_maps_dir:
             raise ValueError("Unable to read or save cloud maps: path to cloud maps was not provided.")
 
+        # TODO: this will throw an error if no cloud_maps_dir is provided!
         if not isdir(self.manager.cloud_maps_dir):
             os.makedirs(self.manager.cloud_maps_dir, exist_ok=True)
 
