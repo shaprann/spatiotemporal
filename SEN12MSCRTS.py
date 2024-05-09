@@ -44,7 +44,7 @@ class DatasetManager:
 
         self.utils = ImageUtils(manager=self)
 
-        self._files = {}
+        self._files = []
         self._data = None
 
         self.cloud_detector = S2PixelCloudDetectorWrapper(
@@ -98,46 +98,38 @@ class DatasetManager:
         :return:
         """
 
-        with tqdm(total=sum([len(files) for r, d, files in walk(self.root_dir)])) as pbar:
+        self._files = []
+        for current_path, directories, filenames in walk(self.root_dir):
+            self._files += [(current_path, filename) for filename in filenames if filename.endswith(".tif")]
 
-            for current_path, directories, filenames in walk(self.root_dir):
+        self._files = [ImageFile(manager=self, directory=directory, filename=filename)
+                       for directory, filename in tqdm(self._files, desc="Process files metadata")]
 
-                for filename in filenames:
-
-                    pbar.update(1)
-
-                    # skip everything except for .tif images
-                    if not filename.endswith(".tif"):
-                        continue
-
-                    image_file = ImageFile(manager=self, directory=current_path, filename=filename)
-
-                    self._files[image_file.index] = image_file.filepath
-
-                    # add path to cloud map if applicable
-                    # if no .tif image is present at that path, it will be used as target path to generate cloud map
-                    # TODO: this will not work if cloud maps are in the same folder as other images.
-                    if self.cloud_maps_dir and image_file.optical:
-                        self._files[image_file.cloud_map_index] = image_file.path_to_cloud_map
+        # Add paths to cloud maps
+        if self.cloud_maps_dir:
+            self._files += [image_file.set(root_dir=self.cloud_maps_dir, modality="S2CLOUDMAP")
+                            for image_file in tqdm(self._files, desc="Add cloud maps to dataset")
+                            if image_file.modality == "S2"]
 
     def build_dataframe(self):
 
+        filepaths_dict = {image_file.index_with_modality: image_file.filepath
+                          for image_file in tqdm(self._files, desc="Extract paths to files")}
+
         # put filenames into a pd.Series
         self._data = pd.Series(
-            index=pd.MultiIndex.from_tuples(self._files.keys(), names=self.config["dataset_index"]),
-            data=self._files.values(),
-            dtype="object"
+            index=pd.MultiIndex.from_tuples(filepaths_dict.keys(), names=self.config["dataset_index"] + ["modality"]),
+            data=filepaths_dict.values()
         )
 
         # sort
         self._data = self._data.sort_index()
 
-        # put modality into columns (creates a pd.DataFrame
+        # put modality into columns (creates a pd.DataFrame)
         self._data = self._data.unstack("modality")
 
     def data_subset(self, split=None, only_resampled=True):
         return self.get_subset(self.data, split=split, only_resampled=only_resampled)
-
 
     def get_subset(self, dataframe, split=None, only_resampled=True):
 
@@ -196,7 +188,7 @@ class ImageUtils:
 
         # if only cloud_map_path is provided, retrieve dataset index for the cloud map path
         if cloud_map_path is not None and index is None:
-            index = ImageFile(manager=self.manager, filepath=cloud_map_path).short_index
+            index = ImageFile(manager=self.manager, filepath=cloud_map_path).index
             if index not in self.manager.data.index:
                 raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
 

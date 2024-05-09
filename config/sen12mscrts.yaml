@@ -4,7 +4,6 @@ dataset_index:
   - "tile"
   - "patch"
   - "timestep"
-  - "modality"
 
 modalities:
   - "S1"

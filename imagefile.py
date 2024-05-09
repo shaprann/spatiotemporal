@@ -1,54 +1,173 @@
 import os
 from os.path import split, isdir, join
+from typing import overload, Tuple
 
 
 class ImageFile:
+
+    @overload
+    def __init__(self, manager, directory: str, filename: str) -> None:
+        ...
+
+    @overload
+    def __init__(self, manager, directory_filename: Tuple[str, str]) -> None:
+        ...
+
+    @overload
+    def __init__(self, manager, filepath: str) -> None:
+        ...
+
+    @overload
+    def __init__(self, manager, root_dir: str, **kwargs) -> None:
+        ...
 
     def __init__(
             self,
             manager,
             filepath=None,
             directory=None,
-            filename=None
+            filename=None,
+            directory_filename=None,
+            root_dir=None,
+            **kwargs
     ):
         self.manager = manager
-        self.filepath, self.directory, self.filename = self._handle_paths(filepath, directory, filename)
+        self._root_dir = None
+        self._metadata = None
 
-        self.filename_metadata = self._parse_filename()
-        self.filepath_metadata = self._parse_filepath()
-        self._check_metadata_consistency()
-        self.metadata = {**self.filename_metadata, **self.filepath_metadata}  # merge two dicts with metadata
+        if filepath is not None or directory is not None or filename is not None or directory_filename is not None:
+            directory, filename = self._handle_paths(filepath, directory, filename, directory_filename)
+            filename_metadata = self._parse_filename(filename=filename)
+            root_dir, filepath_metadata = self._parse_filepath(directory=directory)
+            self._root_dir = root_dir
+            self._metadata = self._merge_metadata(filename_metadata, filepath_metadata)
+        else:
+            if root_dir is None:
+                raise TypeError("Missing keyword argument 'root_dir'")
+            self._root_dir = root_dir
+            self._metadata = kwargs
 
-        self._modality = self._detect_modality()
-        self._index = self._detect_index()
+        self._check_metadata()
+        self._check_modality()
+
+    def __repr__(self):
+        return f"<{type(self).__name__} {self.relpath}>"
+
+    @property
+    def root_dir(self):
+        return self._root_dir.copy()
+
+    @property
+    def metadata(self):
+        return self._metadata.copy()
 
     @property
     def index(self):
-        return self._index
+        return tuple(self._metadata[name] for name in self.manager.config['dataset_index'])
 
     @property
-    def short_index(self):
-        return self._index[:-1]
+    def modality(self):
+        return self._metadata["modality"]
 
     @property
-    def optical(self):
-        return True if self._modality == "S2" else False
+    def index_with_modality(self):
+        return *self.index, self.modality
 
     @property
-    def cloud_map(self):
-        return True if self._modality == "S2CLOUDMAP" else False
+    def filepath(self):
+        return join(self.directory, self.filename)
+
+    @property
+    def relpath(self):
+        return join(self.directory_relpath, self.filename)
+
+    @property
+    def directory_relpath(self):
+        directory_path_content = [
+            self._metadata["ROI"],
+            self._metadata["tile"],
+            self._metadata["modality"].upper(),
+            self._metadata["timestep"]
+        ]
+        directory_path_content = [str(value) for value in directory_path_content]
+        directory_relpath = os.sep.join(directory_path_content)
+
+        return directory_relpath
+
+    @property
+    def directory(self):
+        return join(self._root_dir, self.directory_relpath)
+
+    @property
+    def filename(self):
+        filename_content = [
+            self._metadata["modality"].lower(),
+            self._metadata["ROI"],
+            self._metadata["tile"],
+            "ImgNo",
+            self._metadata["timestep"],
+            self._metadata["date"],
+            "patch",
+            self._metadata["patch"]
+        ]
+        filename_content = [str(value) for value in filename_content]
+        filename = "_".join(filename_content) + ".tif"
+
+        return filename
 
     @classmethod
-    def _handle_paths(cls, filepath, directory, filename):
-        if filepath:
-            directory, filename = split(filepath)
-        elif directory and filename:
-            filepath = join(directory, filename)
-        else:
-            raise ValueError("Either a full image path or a combimation of folder and filename must be provided")
-        return filepath, directory, filename
+    def _handle_paths(cls, filepath: str, directory: str, filename: str, directory_filename: Tuple[str, str]):
 
-    def _parse_filename(self):
+        if directory_filename is not None:
+
+            if filepath is not None or directory is not None or filename is not None:
+                raise TypeError("If you provide a 'directory_filename' tuple, "
+                                "then 'directory', 'filename' and 'filepath' must be None!")
+            try:
+                directory, filename = directory_filename
+            except ValueError as err:
+                raise ValueError(f"Tuple 'directory_filename' must contain two items."
+                                 f" Got instead: {directory_filename}") from err
+
+        if filepath is not None:
+
+            if directory is not None or filename is not None:
+                raise TypeError("If you provide a 'filepath', then 'directory' and 'filename' must be None!")
+            if not filepath.endswith(".tif"):
+                raise ValueError(f"The 'filepath' must point to a .tif image. Got instead: {filepath}")
+
+            directory, filename = split(filepath)
+
+            if directory == '':
+                raise ValueError(f"The 'filepath' must be an absolute path. Got instead: {filepath}")
+
+        if directory is None or filename is None:
+            raise TypeError(f"You need to provide both 'directory' and 'filename'! Got instead: "
+                            f"\ndirectory: {directory}"
+                            f"\nfilename: {filename}")
+
+        return directory, filename
+
+    @classmethod
+    def _merge_metadata(cls, filepath_metadata, filename_metadata):
+        cls._check_metadata_consistency(filepath_metadata, filename_metadata)
+        return {**filename_metadata, **filepath_metadata}  # merge two dicts with metadata
+
+    @classmethod
+    def _check_metadata_consistency(cls, filepath_metadata, filename_metadata):
+        metadata_intersection = set(filepath_metadata).intersection(set(filename_metadata))
+        inconsistent_metadata = [metadata for metadata in metadata_intersection
+                                 if not filepath_metadata[metadata] == filename_metadata[metadata]]
+        if inconsistent_metadata:
+            inconsistent_filepath_metadata = {metadata: value for metadata, value in filepath_metadata.items()
+                                              if metadata in inconsistent_metadata}
+            inconsistent_filename_metadata = {metadata: value for metadata, value in filename_metadata.items()
+                                              if metadata in inconsistent_metadata}
+            raise ValueError(f"Metadata extracted from image filename and image file path is not the same! \n"
+                             f"From filename:  {inconsistent_filepath_metadata} \n"
+                             f"From file path: {inconsistent_filename_metadata}")
+
+    def _parse_filename(self, filename):
         """
         Parses information which is stored in the filename of a SEN12MS-CR-TS file.
         Expected filename format: "{modality}_{ROI}_{tile}_ImgNo_{timestep}_{date}_patch_{patch}.tif"
@@ -58,22 +177,24 @@ class ImageFile:
             {"modality: "S2", "ROI": "ROIs1868", "tile": 100, "timestep": 9, "date": "2018-04-25", "patch": 17}
         """
 
-        if not self.filename.endswith(".tif"):
-            raise ValueError(f"Filename must have a .tif extension. Received instead: {self.filename}")
+        if not filename.endswith(".tif"):
+            raise ValueError(f"Filename must have a .tif extension. Received instead: {filename}")
 
-        filename = self.filename[:-4]  # remove .tif extension
+        filename = filename[:-4]  # remove .tif extension
 
         try:
             modality, roi, tile, _, timestep, date, _, patch = filename.split("_")  # extract information
         except ValueError as err:
             raise ValueError(f"Could not parse {self.manager.config['filename_metadata']} from filename {filename}")
 
-        return dict(zip(
+        filename_metadata = dict(zip(
             self.manager.config['filename_metadata'],
             (modality.upper(), roi, int(tile), int(timestep), date, int(patch))
         ))
 
-    def _parse_filepath(self):
+        return filename_metadata
+
+    def _parse_filepath(self, directory):
         """
         Reads information which is given by file location, i.e. hierarchy of folders where file is stored.
         Example path:
@@ -83,93 +204,35 @@ class ImageFile:
         """
 
         try:
-            roi, tile, modality, timestep = self.directory.split(os.sep)[-4:]
+            roi, tile, modality, timestep = directory.split(os.sep)[-4:]
+            root_dir = os.sep.join(directory.split(os.sep)[:-4])
         except ValueError as err:
             raise ValueError(f"Could not parse {self.manager.config['filepath_metadata']} "
-                             f"from directory path {self.directory}") from err
+                             f"from directory path {directory}") from err
 
-        return dict(zip(
+        filepath_metadata = dict(zip(
             self.manager.config['filepath_metadata'],
-            (roi, int(tile), modality, int(timestep))
+            (roi, int(tile), modality.upper(), int(timestep))
         ))
 
-    def _check_metadata_consistency(self):
-        same_metadata = [content for content in self.filepath_metadata if content in self.filename_metadata]
-        for metadata in same_metadata:
-            if not self.filepath_metadata[metadata] == self.filename_metadata[metadata]:
-                raise ValueError(f"Metadata extracted from image filename and image location is not same! \n"
-                                 f"Filename {metadata} is {self.filename_metadata[metadata]} \n"
-                                 f"Location {metadata} is {self.filepath_metadata[metadata]}")
+        return root_dir, filepath_metadata
 
-    def _detect_modality(self):
-        self._check_modality()
-        return self.metadata["modality"]
+    def _check_metadata(self):
+        required_metadata = set(self.manager.config['filepath_metadata']) | set(self.manager.config['filename_metadata'])
+        if not required_metadata.issubset(self._metadata):
+            raise ValueError(f"Provided metadata is not sufficient. "
+                             f"Expected to get: {required_metadata}. "
+                             f"Got instead: {self._metadata.keys()}")
 
     def _check_modality(self):
-        if not self.metadata["modality"] in self.manager.config['modalities']:
+        if not self._metadata["modality"] in self.manager.config['modalities']:
             raise ValueError(
                 f"Detected a .tif image of invalid modality. "
                 f"Allowed modalities in the dataset: {self.manager.config['modalities']}. "
-                f"Got instead: {self.metadata['modality']}"
+                f"Got instead: {self._metadata['modality']}"
             )
 
-    def _detect_index(self):
-        return tuple(self.metadata[index_level] for index_level in self.manager.config['dataset_index'])
-
-    def check_cloud_map_prerequisites(self):
-
-        if self.cloud_map:
-            return
-
-        if not self.optical:
-            raise ValueError(f"Can only generate cloud maps for optical images. Got instead: {self._modality}")
-
-        if not self.manager.cloud_maps_dir:
-            raise ValueError("Unable to read or save cloud maps: path to cloud maps was not provided.")
-
-        # TODO: this will throw an error if no cloud_maps_dir is provided!
-        if not isdir(self.manager.cloud_maps_dir):
-            os.makedirs(self.manager.cloud_maps_dir, exist_ok=True)
-
-    @property
-    def cloud_map_index(self):
-        index = list(self._index)
-        index[-1] = "S2CLOUDMAP"
-        return tuple(index)
-
-    @property
-    def path_to_cloud_map(self):
-
-        self.check_cloud_map_prerequisites()
-
-        if self.cloud_map:
-            return self.filepath
-
-        return self.path_to_product(self.manager.cloud_maps_dir, modality="s2cloudmap")
-
-    def path_to_product(self, directory, modality):
-
-        # here we use string join
-        filename_content = [
-            modality.lower(),
-            self.metadata["ROI"],
-            self.metadata["tile"],
-            "ImgNo",
-            self.metadata["timestep"],
-            self.metadata["date"],
-            "patch",
-            self.metadata["patch"]
-        ]
-        filename = "_".join([str(value) for value in filename_content]) + ".tif"
-
-        # here we use os.path.join
-        directory_path_content = [
-            directory,
-            self.metadata["ROI"],
-            self.metadata["tile"],
-            modality.upper(),
-            self.metadata["timestep"]
-        ]
-        directory = join(*[str(value) for value in directory_path_content])
-
-        return join(directory, filename)
+    def set(self, **kwargs):
+        root_dir = kwargs.pop("root_dir") if "root_dir" in kwargs else self._root_dir
+        metadata = {**self._metadata, **kwargs}
+        return ImageFile(manager=self.manager, root_dir=root_dir, **metadata)
