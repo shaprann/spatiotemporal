@@ -1,29 +1,36 @@
 import os
-from os.path import split, isdir, join
+import yaml
+from os.path import split, abspath, dirname, join
 from typing import overload, Tuple
 
 
 class ImageFile:
 
+    # get current project directory
+    project_directory = abspath(dirname(__file__))
+
+    # load dataset config file
+    with open(join(project_directory, "config/sen12mscrts.yaml"), 'r') as file:
+        config = yaml.safe_load(file)
+
     @overload
-    def __init__(self, manager, directory: str, filename: str) -> None:
+    def __init__(self, directory: str, filename: str) -> None:
         ...
 
     @overload
-    def __init__(self, manager, directory_filename: Tuple[str, str]) -> None:
+    def __init__(self, directory_filename: Tuple[str, str]) -> None:
         ...
 
     @overload
-    def __init__(self, manager, filepath: str) -> None:
+    def __init__(self, filepath: str) -> None:
         ...
 
     @overload
-    def __init__(self, manager, root_dir: str, **kwargs) -> None:
+    def __init__(self, root_dir: str, **kwargs) -> None:
         ...
 
     def __init__(
             self,
-            manager,
             filepath=None,
             directory=None,
             filename=None,
@@ -31,7 +38,6 @@ class ImageFile:
             root_dir=None,
             **kwargs
     ):
-        self.manager = manager
         self._root_dir = None
         self._metadata = None
 
@@ -63,7 +69,7 @@ class ImageFile:
 
     @property
     def index(self):
-        return tuple(self._metadata[name] for name in self.manager.config['dataset_index'])
+        return tuple(self._metadata[name] for name in self.config['dataset_index'])
 
     @property
     def modality(self):
@@ -167,7 +173,8 @@ class ImageFile:
                              f"From filename:  {inconsistent_filepath_metadata} \n"
                              f"From file path: {inconsistent_filename_metadata}")
 
-    def _parse_filename(self, filename):
+    @classmethod
+    def _parse_filename(cls, filename):
         """
         Parses information which is stored in the filename of a SEN12MS-CR-TS file.
         Expected filename format: "{modality}_{ROI}_{tile}_ImgNo_{timestep}_{date}_patch_{patch}.tif"
@@ -185,16 +192,17 @@ class ImageFile:
         try:
             modality, roi, tile, _, timestep, date, _, patch = filename.split("_")  # extract information
         except ValueError as err:
-            raise ValueError(f"Could not parse {self.manager.config['filename_metadata']} from filename {filename}")
+            raise ValueError(f"Could not parse {cls.config['filename_metadata']} from filename {filename}")
 
         filename_metadata = dict(zip(
-            self.manager.config['filename_metadata'],
+            cls.config['filename_metadata'],
             (modality.upper(), roi, int(tile), int(timestep), date, int(patch))
         ))
 
         return filename_metadata
 
-    def _parse_filepath(self, directory):
+    @classmethod
+    def _parse_filepath(cls, directory):
         """
         Reads information which is given by file location, i.e. hierarchy of folders where file is stored.
         Example path:
@@ -207,32 +215,32 @@ class ImageFile:
             roi, tile, modality, timestep = directory.split(os.sep)[-4:]
             root_dir = os.sep.join(directory.split(os.sep)[:-4])
         except ValueError as err:
-            raise ValueError(f"Could not parse {self.manager.config['filepath_metadata']} "
+            raise ValueError(f"Could not parse {cls.config['filepath_metadata']} "
                              f"from directory path {directory}") from err
 
         filepath_metadata = dict(zip(
-            self.manager.config['filepath_metadata'],
+            cls.config['filepath_metadata'],
             (roi, int(tile), modality.upper(), int(timestep))
         ))
 
         return root_dir, filepath_metadata
 
     def _check_metadata(self):
-        required_metadata = set(self.manager.config['filepath_metadata']) | set(self.manager.config['filename_metadata'])
+        required_metadata = set(self.config['filepath_metadata']) | set(self.config['filename_metadata'])
         if not required_metadata.issubset(self._metadata):
             raise ValueError(f"Provided metadata is not sufficient. "
                              f"Expected to get: {required_metadata}. "
                              f"Got instead: {self._metadata.keys()}")
 
     def _check_modality(self):
-        if not self._metadata["modality"] in self.manager.config['modalities']:
+        if not self._metadata["modality"] in self.config['modalities']:
             raise ValueError(
                 f"Detected a .tif image of invalid modality. "
-                f"Allowed modalities in the dataset: {self.manager.config['modalities']}. "
+                f"Allowed modalities in the dataset: {self.config['modalities']}. "
                 f"Got instead: {self._metadata['modality']}"
             )
 
     def set(self, **kwargs):
         root_dir = kwargs.pop("root_dir") if "root_dir" in kwargs else self._root_dir
         metadata = {**self._metadata, **kwargs}
-        return ImageFile(manager=self.manager, root_dir=root_dir, **metadata)
+        return ImageFile(root_dir=root_dir, **metadata)

@@ -102,7 +102,7 @@ class DatasetManager:
         for current_path, directories, filenames in walk(self.root_dir):
             self._files += [(current_path, filename) for filename in filenames if filename.endswith(".tif")]
 
-        self._files = [ImageFile(manager=self, directory=directory, filename=filename)
+        self._files = [ImageFile(directory=directory, filename=filename)
                        for directory, filename in tqdm(self._files, desc="Process files metadata")]
 
         # Add paths to cloud maps
@@ -188,7 +188,7 @@ class ImageUtils:
 
         # if only cloud_map_path is provided, retrieve dataset index for the cloud map path
         if cloud_map_path is not None and index is None:
-            index = ImageFile(manager=self.manager, filepath=cloud_map_path).index
+            index = ImageFile(filepath=cloud_map_path).index
             if index not in self.manager.data.index:
                 raise ValueError(f"Can not find provided cloud map path in the dataset: {cloud_map_path}")
 
