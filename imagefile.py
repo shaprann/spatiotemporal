@@ -61,7 +61,7 @@ class ImageFile:
 
     @property
     def root_dir(self):
-        return self._root_dir.copy()
+        return self._root_dir
 
     @property
     def metadata(self):
