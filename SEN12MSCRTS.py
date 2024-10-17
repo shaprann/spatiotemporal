@@ -513,7 +513,7 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
         if is_single_temporal:
             cloud_probs = cloud_probs[np.newaxis, ...]
 
-        threshold, conv_filter, average_over, dilation_filter, dilation_size = self._handle_mask_parameters(
+        int_threshold, conv_filter, average_over, dilation_filter, dilation_size = self._handle_mask_parameters(
             threshold=threshold,
             average_over=average_over,
             dilation_size=dilation_size
@@ -528,7 +528,7 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
                 [convolve(cloud_prob, conv_filter) for cloud_prob in cloud_probs], dtype=np.uint8
             )
 
-        cloud_masks = (cloud_probs > threshold).astype(np.uint8)
+        cloud_masks = (cloud_probs > int_threshold).astype(np.uint8)
 
         if dilation_size is not None:
             cloud_masks = np.asarray(
@@ -549,10 +549,11 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
     def _handle_mask_parameters(self, threshold, average_over, dilation_size):
 
         threshold = self.threshold if threshold is None else threshold
+        int_threshold = int(threshold * 100)
         conv_filter = self.conv_filter if average_over is None else disk(average_over) / np.sum(disk(average_over))
         average_over = self.average_over if average_over is None else average_over
         dilation_filter = self.dilation_filter if dilation_size is None else disk(dilation_size)
         dilation_size = self.dilation_size if dilation_size is None else dilation_size
 
-        return threshold, conv_filter, average_over, dilation_filter, dilation_size
+        return int_threshold, conv_filter, average_over, dilation_filter, dilation_size
 
