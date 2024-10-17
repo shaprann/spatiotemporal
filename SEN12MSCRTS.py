@@ -507,6 +507,8 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
         :rtype: numpy array (n_images, n, m) or (n, m)
         """
 
+        cloud_probs = cloud_probs.copy()
+
         is_single_temporal = cloud_probs.ndim == 2
         if is_single_temporal:
             cloud_probs = cloud_probs[np.newaxis, ...]
@@ -533,7 +535,7 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
                 [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=np.uint8
             )
             novalue_masks = np.asarray(
-                [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=np.uint8
+                [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=bool
             )
 
         # handle NOVALUE pixels
