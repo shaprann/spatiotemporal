@@ -13,6 +13,7 @@ from skimage.morphology import dilation, disk
 from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from s2cloudless.utils import MODEL_BAND_IDS
+from osgeo import gdal
 
 
 class DatasetManager:
@@ -301,6 +302,14 @@ class ImageUtils:
     def read_tif(filepath):
         reader = rasterio.open(filepath)
         return reader.read()
+
+    @staticmethod
+    def read_tif_fast(filepath, bands=None):
+        reader = gdal.Open(filepath)
+        image = reader.ReadAsArray()
+        if bands is not None:
+            image = image[bands]
+        return image
 
     @staticmethod
     def get_rasterio_profile(filepath):
