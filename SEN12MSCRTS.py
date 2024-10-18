@@ -259,7 +259,7 @@ class ImageUtils:
                 filepath=cloud_map_path,
                 image=cloud_map,
                 rasterio_profile=rasterio_profile,
-                dtype=rasterio.uint8
+                dtype=self.manager.cloud_detector.dtype
             )
 
         return cloud_map
@@ -448,6 +448,8 @@ class ImageUtils:
 
 class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
 
+    dtype = np.uint8
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.MODEL_BAND_IDS = MODEL_BAND_IDS
@@ -479,7 +481,7 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
         cloud_probability_map = super().get_cloud_probability_maps(data)
 
         # convert probabilities to [0..100] range and discretize, e.g. convert probability to percentage
-        cloud_percentage_map = np.rint(cloud_probability_map * 100).astype(np.uint8)
+        cloud_percentage_map = np.rint(cloud_probability_map * 100).astype(self.dtype)
         cloud_percentage_map[novalue_mask] = 255
         cloud_percentage_map = cloud_percentage_map[np.newaxis, ...]
         return cloud_percentage_map
@@ -525,14 +527,14 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
 
         if average_over is not None:
             cloud_probs = np.asarray(
-                [convolve(cloud_prob, conv_filter) for cloud_prob in cloud_probs], dtype=np.uint8
+                [convolve(cloud_prob, conv_filter) for cloud_prob in cloud_probs], dtype=self.dtype
             )
 
-        cloud_masks = (cloud_probs > int_threshold).astype(np.uint8)
+        cloud_masks = (cloud_probs > int_threshold).astype(self.dtype)
 
         if dilation_size is not None:
             cloud_masks = np.asarray(
-                [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=np.uint8
+                [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=self.dtype
             )
             novalue_masks = np.asarray(
                 [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=bool
