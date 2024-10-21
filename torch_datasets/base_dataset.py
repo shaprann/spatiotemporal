@@ -16,6 +16,8 @@ class BaseDataset(Dataset, ABC):
     ):
         super().__init__()
         self.manager = dataset_manager
+        self.dataset_manager = self.manager  # an alias just in case
+        self.utils = self.dataset_manager.utils
         self.data = self.initialize_data()
 
         # Add t_shift level to columns
@@ -54,8 +56,23 @@ class BaseDataset(Dataset, ABC):
 
         return self
 
-    def dropna(self):
+    def dropna(self, inplace=True):
+
+        if not inplace:
+            return copy(self).dropna(inplace=True)
+
         self.data = self.data.dropna(axis=0, how="any")
+
+        return self
+
+    def subset(self, inplace=False, split=None, region=None, s1_resampled=None):
+
+        if not inplace:
+            return copy(self).subset(inplace=True, split=split, region=region, s1_resampled=s1_resampled)
+
+        self.data = self.manager.get_subset(self.data, split=split, region=region, s1_resampled=s1_resampled)
+
+        return self
 
     def __add__(self, other):
         return MergedDataset([self, other])
