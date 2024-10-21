@@ -43,6 +43,7 @@ class BaseDataset(Dataset, ABC):
         )
         # We don't want to drop NaNs now, because there can be other NaNs in other rows which we might want to retain
         # self.data = shifted_data.dropna(axis=0)
+        self.data = shifted_data
 
         return self
 
