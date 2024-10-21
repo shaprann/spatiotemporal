@@ -53,6 +53,12 @@ class BaseDataset(Dataset, ABC):
     def __add__(self, other):
         return MergedDataset([self, other])
 
+    def __getitem__(self, idx):
+        return self.data.iloc[idx]
+
+    def __len__(self):
+        return len(self.data)
+
 
 class MergedDataset(BaseDataset):
 
