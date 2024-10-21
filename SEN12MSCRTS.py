@@ -174,7 +174,7 @@ class DatasetManager:
         iloc_indices = []
         for index_tuple in index_tuples:
             try:
-                iloc_indices.append(self.data.index.get_locs(index_tuple))
+                iloc_indices.append(dataframe.index.get_locs(index_tuple))
             except KeyError:
                 continue
         indices = np.concatenate(iloc_indices) if iloc_indices else []
