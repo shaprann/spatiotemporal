@@ -46,6 +46,7 @@ class DatasetManager:
 
         self._files = []
         self._data = None
+        self._modifications = []
 
         self.subsets = None
         self.initialize_subsets()

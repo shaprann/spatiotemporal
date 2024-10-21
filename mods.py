@@ -10,14 +10,29 @@ from tqdm import tqdm
 
 class Modification(ABC):
 
+    requirements = tuple()
+
     def __init__(self, dataset_manager):
         self.dataset_manager = dataset_manager
         self.utils = self.dataset_manager.utils
         self.mod_dir = self.dataset_manager.root_dir + "_MODS"
 
+    def check_requirements(self):
+        for requirement in self.requirements:
+            if requirement not in self.dataset_manager._modifications:
+                raise ValueError(f"Requirement not fulfilled! First apply modification '{requirement}' to dataset")
+
     @abstractmethod
-    def apply(self):
+    def _apply(self, verbose=None):
         raise NotImplementedError
+
+    def apply(self, verbose=None):
+        self._apply(verbose=verbose)
+        self.dataset_manager._modifications.append(type(self).__name__)
+
+    def apply_modification(self, verbose=None):
+        """ Alias for apply() """
+        self.apply(verbose=verbose)
 
 
 class ZeroPixelsS2(Modification):
@@ -53,7 +68,7 @@ class ZeroPixelsS2(Modification):
             )
             self.recalculate = True
 
-    def apply(self, verbose=False):
+    def _apply(self, verbose=False):
 
         if self.recalculate:
             self._interpolate_patches(verbose=verbose)
@@ -136,3 +151,72 @@ class ZeroPixelsS2(Modification):
 
     def _save(self):
         self.modification.to_csv(self.config_path)
+
+
+class CategoricalCloudMaps(Modification):
+
+    requirements = (
+        ZeroPixelsS2.__name__,
+    )
+
+    def __init__(self, dataset_manager):
+
+        super().__init__(dataset_manager)
+        self.check_requirements()
+        self.mod_dir = join(self.mod_dir, type(self).__name__)
+
+    def _apply(self, verbose=False):
+        if verbose:
+            tqdm.pandas(desc="Adding categorical cloud maps... ")
+            self.modification = self.dataset_manager.data["S2CLOUDMAP"].progress_apply(self._transform_cloud_path)
+        else:
+            self.modification = self.dataset_manager.data["S2CLOUDMAP"].apply(self._transform_cloud_path)
+
+        self.dataset_manager._data["S2CLOUDMAP"] = self.modification
+
+    def _transform_cloud_path(self, filepath):
+
+        if filepath is np.nan:
+            return None
+        outfile = ImageFile(filepath)
+        outfile = outfile.set(root_dir=self.mod_dir)
+        filepath = outfile.filepath
+        if isfile(filepath):
+            return filepath
+        else:
+            return None
+
+
+class CloudfreeArea(Modification):
+
+    requirements = (
+        ZeroPixelsS2.__name__,
+        CategoricalCloudMaps.__name__,
+    )
+
+    def __init__(self, dataset_manager):
+
+        super().__init__(dataset_manager)
+        self.check_requirements()
+        self.mod_dir = join(self.mod_dir, type(self).__name__)
+        self.threshold = int(dataset_manager.cloud_probability_threshold * 100)
+        self.cloud_probability_histogram = pd.read_csv(
+            join(self.dataset_manager.project_directory, "stats", "cloud_probability_histogram_int.csv"),
+            index_col=["ROI", "tile", "patch", "timestep"]
+        )
+        self.modification = pd.Series(
+            pd.NA,
+            index=self.dataset_manager.data.index,
+            name="CLOUDFREEAREA"
+        )
+        self.cloud_probability_cumulative = np.cumsum(self.cloud_probability_histogram.values, axis=-1)
+
+    def _apply(self, verbose=False):
+
+        if verbose:
+            print("Adding cloudfree area percentages...")
+
+        self.modification.loc[self.cloud_probability_histogram.index] = (
+                self.cloud_probability_cumulative[:, self.threshold] / self.cloud_probability_cumulative[:, -1]
+        )
+        self.dataset_manager._data["CLOUDFREEAREA"] = self.modification

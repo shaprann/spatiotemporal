@@ -8,6 +8,8 @@ from typing import List
 
 class BaseDataset(Dataset, ABC):
 
+    requirements = tuple()
+
     def __init__(
             self,
             dataset_manager
@@ -27,6 +29,11 @@ class BaseDataset(Dataset, ABC):
     @abstractmethod
     def initialize_data(self):
         raise NotImplementedError
+
+    def check_requirements(self):
+        for requirement in self.requirements:
+            if requirement not in self.manager._modifications:
+                raise ValueError(f"Requirement not fulfilled! First apply modification '{requirement}' to dataset")
 
     def shift(self, t_shift: int, inplace=False):
 
