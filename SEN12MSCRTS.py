@@ -186,8 +186,8 @@ class DatasetManager:
 class ImageUtils:
 
     project_directory = abspath(dirname(__file__))
-    min_max_s2 = pd.read_csv(join(project_directory, "stats/S2_99_percentile_min_max.csv"), index_col="band")
-    min_max_s1 = pd.read_csv(join(project_directory, "stats/S1_99_percentile_min_max.csv"), index_col="band")
+    min_max_s2 = pd.read_csv(join(project_directory, "stats/S2_min_max.csv"), index_col="band")
+    min_max_s1 = pd.read_csv(join(project_directory, "stats/S1_min_max.csv"), index_col="band")
 
     def __init__(self, manager):
         self.manager = manager
