@@ -500,7 +500,9 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
             cloud_probs,
             threshold=None,
             average_over=None,
-            dilation_size=None
+            dilation_size=None,
+            categorical=False,
+            skip_novalue=False
     ):
         """
         Replaces the get_mask_from_prob() method of S2PixelCloudDetector with following changes:
@@ -539,18 +541,18 @@ class S2PixelCloudDetectorWrapper(S2PixelCloudDetector):
                 [convolve(cloud_prob, conv_filter) for cloud_prob in cloud_probs], dtype=self.dtype
             )
 
-        cloud_masks = (cloud_probs > int_threshold).astype(self.dtype)
+        cloud_masks = (cloud_probs > int_threshold).astype(self.dtype) if not categorical else cloud_probs
 
         if dilation_size is not None:
             cloud_masks = np.asarray(
                 [dilation(cloud_mask, dilation_filter) for cloud_mask in cloud_masks], dtype=self.dtype
             )
-            novalue_masks = np.asarray(
-                [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=bool
-            )
-
-        # handle NOVALUE pixels
-        cloud_masks[novalue_masks] = 255
+            # handle NOVALUE pixels
+            if not skip_novalue:
+                novalue_masks = np.asarray(
+                    [dilation(novalue_mask, dilation_filter) for novalue_mask in novalue_masks], dtype=bool
+                )
+                cloud_masks[novalue_masks] = 255
 
         if is_single_temporal:
             return cloud_masks.squeeze(axis=0)
