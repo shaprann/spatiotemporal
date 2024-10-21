@@ -41,9 +41,13 @@ class BaseDataset(Dataset, ABC):
             shifted_data.columns.levels[0] + t_shift,
             level="t_shift"
         )
-        self.data = shifted_data.dropna(axis=0)
+        # We don't want to drop NaNs now, because there can be other NaNs in other rows which we might want to retain
+        # self.data = shifted_data.dropna(axis=0)
 
         return self
+
+    def dropna(self):
+        self.data = self.data.dropna(axis=0, how="any")
 
     def __add__(self, other):
         return MergedDataset([self, other])
@@ -64,7 +68,7 @@ class MergedDataset(BaseDataset):
         super().__init__(dataset_manager=managers.pop())
 
     def initialize_data(self):
-        return pd.concat([child.data for child in self.children], join="inner", axis=1)
+        return pd.concat([child.data for child in self.children], join="outer", axis=1)
 
 
 class S1(BaseDataset):
