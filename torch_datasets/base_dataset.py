@@ -78,6 +78,13 @@ class BaseDataset(Dataset, ABC):
         return MergedDataset([self, other])
 
     def __getitem__(self, idx):
+
+        if type(idx) is tuple:
+            try:
+                return self.data.loc[idx]
+            except KeyError as err:
+                raise KeyError(f"Could not find index {idx} in the dataset!") from err
+
         return self.data.iloc[idx]
 
     def __len__(self):
