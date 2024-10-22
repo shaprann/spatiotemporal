@@ -22,6 +22,16 @@ class Modification(ABC):
             if requirement not in self.dataset_manager._modifications:
                 raise ValueError(f"Requirement not fulfilled! First apply modification '{requirement}' to dataset")
 
+    @property
+    @abstractmethod
+    def modification(self):
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def config_path(self):
+        raise NotImplementedError
+
     @abstractmethod
     def _apply(self, verbose=None):
         raise NotImplementedError
@@ -34,6 +44,9 @@ class Modification(ABC):
         """ Alias for apply() """
         self.apply(verbose=verbose)
 
+    def _save(self):
+        self.modification.to_csv(self.config_path)
+
 
 class ZeroPixelsS2(Modification):
 
@@ -42,7 +55,7 @@ class ZeroPixelsS2(Modification):
         super().__init__(dataset_manager)
 
         self.mod_dir = join(self.mod_dir, type(self).__name__)
-        self.config_path = join(self.dataset_manager.project_directory, "config", f"MOD_{type(self).__name__}.csv")
+        self._config_path = join(self.dataset_manager.project_directory, "config", f"MOD_{type(self).__name__}.csv")
 
         self.zero_patches = pd.read_csv(
             join(self.dataset_manager.project_directory, "stats", "S2_patches_with_zeros.csv"),
@@ -55,20 +68,31 @@ class ZeroPixelsS2(Modification):
         self.patches_to_interpolate = self.zero_patches[~self.zero_patches["Empty"] & ~self.zero_patches["Border"]].index
 
         try:
-            self.modification = pd.read_csv(
+            self._modification = pd.read_csv(
                 self.config_path,
                 index_col=["ROI", "tile", "patch", "timestep"]
             )
             self.recalculate = False
         except FileNotFoundError:
-            self.modification = pd.DataFrame(
+            self._modification = pd.DataFrame(
                 pd.NA,
                 index=self.zero_patches.index,
                 columns=["S2", "S2CLOUDMAP"]
             )
             self.recalculate = True
 
+    @property
+    def modification(self):
+        return self._modification
+
+    @property
+    def config_path(self):
+        return self._config_path
+
     def _apply(self, verbose=False):
+
+        if verbose:
+            print("Fixing zero pixels in S2 images...")
 
         if self.recalculate:
             self._interpolate_patches(verbose=verbose)
@@ -149,9 +173,6 @@ class ZeroPixelsS2(Modification):
         border_patches = self.zero_patches[self.zero_patches["Border"]].index
         self.modification.loc[border_patches, ["S2", "S2CLOUDMAP"]] = pd.NA
 
-    def _save(self):
-        self.modification.to_csv(self.config_path)
-
 
 class CategoricalCloudMaps(Modification):
 
@@ -164,13 +185,37 @@ class CategoricalCloudMaps(Modification):
         super().__init__(dataset_manager)
         self.check_requirements()
         self.mod_dir = join(self.mod_dir, type(self).__name__)
+        self._config_path = join(self.dataset_manager.project_directory, "config", f"MOD_{type(self).__name__}.csv")
+        try:
+            self._modification = pd.read_csv(
+                self.config_path,
+                index_col=["ROI", "tile", "patch", "timestep"]
+            )
+        except FileNotFoundError:
+            self._modification = None
+
+    @property
+    def modification(self):
+        return self._modification
+
+    @property
+    def config_path(self):
+        return self._config_path
 
     def _apply(self, verbose=False):
+
         if verbose:
-            tqdm.pandas(desc="Adding categorical cloud maps... ")
-            self.modification = self.dataset_manager.data["S2CLOUDMAP"].progress_apply(self._transform_cloud_path)
-        else:
-            self.modification = self.dataset_manager.data["S2CLOUDMAP"].apply(self._transform_cloud_path)
+            print("Adding categorical cloud maps...")
+
+        if self.modification is None:
+
+            if verbose:
+                tqdm.pandas(desc="Adding categorical cloud maps... ")
+                self._modification = self.dataset_manager.data["S2CLOUDMAP"].progress_apply(self._transform_cloud_path)
+            else:
+                self._modification = self.dataset_manager.data["S2CLOUDMAP"].apply(self._transform_cloud_path)
+
+            self._save()
 
         self.dataset_manager._data["S2CLOUDMAP"] = self.modification
 
@@ -204,19 +249,27 @@ class CloudfreeArea(Modification):
             join(self.dataset_manager.project_directory, "stats", "cloud_probability_histogram_int.csv"),
             index_col=["ROI", "tile", "patch", "timestep"]
         )
-        self.modification = pd.Series(
+        self._modification = pd.Series(
             pd.NA,
             index=self.dataset_manager.data.index,
             name="CLOUDFREEAREA"
         )
         self.cloud_probability_cumulative = np.cumsum(self.cloud_probability_histogram.values, axis=-1)
 
+    @property
+    def modification(self):
+        return self._modification
+
+    @property
+    def config_path(self):
+        raise NotImplementedError
+
     def _apply(self, verbose=False):
 
         if verbose:
             print("Adding cloudfree area percentages...")
 
-        self.modification.loc[self.cloud_probability_histogram.index] = (
+        self._modification.loc[self.cloud_probability_histogram.index] = (
                 self.cloud_probability_cumulative[:, self.threshold] / self.cloud_probability_cumulative[:, -1]
         )
-        self.dataset_manager._data["CLOUDFREEAREA"] = self.modification
+        self.dataset_manager._data["CLOUDFREEAREA"] = self._modification
