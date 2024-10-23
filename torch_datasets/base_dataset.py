@@ -18,7 +18,7 @@ class BaseDataset(Dataset, ABC):
         self.manager = dataset_manager
         self.dataset_manager = self.manager  # an alias just in case
         self.utils = self.dataset_manager.utils
-        self.data = self.initialize_data()
+        self.data = self.initialize_data().copy()
 
         # Add t_shift level to columns
         if "t_shift" not in self.data.columns.names:
