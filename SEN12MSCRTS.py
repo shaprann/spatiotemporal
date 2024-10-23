@@ -148,6 +148,10 @@ class DatasetManager:
         except FileNotFoundError:
             pass
 
+    def subset(self, **kwargs):
+        """Alias for self.data_subset()"""
+        return self.data_subset(**kwargs)
+
     def data_subset(self, split=None, s1_resampled=True):
         return self.get_subset(self.data, split=split, s1_resampled=s1_resampled)
 
