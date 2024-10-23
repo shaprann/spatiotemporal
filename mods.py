@@ -239,12 +239,14 @@ class CloudfreeArea(Modification):
         CategoricalCloudMaps.__name__,
     )
 
-    def __init__(self, dataset_manager):
+    def __init__(self, dataset_manager, threshold: int = None):
 
         super().__init__(dataset_manager)
         self.check_requirements()
         self.mod_dir = join(self.mod_dir, type(self).__name__)
-        self.threshold = int(dataset_manager.cloud_probability_threshold * 100)
+        self.threshold = int(dataset_manager.cloud_probability_threshold * 100) if threshold is None else threshold
+        if self.threshold < 0 or self.threshold > 100:
+            raise ValueError(f"Threshold must be in range 0..100. Received instead: {self.threshold}")
         self.cloud_probability_histogram = pd.read_csv(
             join(self.dataset_manager.project_directory, "stats", "cloud_probability_histogram_int.csv"),
             index_col=["ROI", "tile", "patch", "timestep"]
@@ -267,7 +269,7 @@ class CloudfreeArea(Modification):
     def _apply(self, verbose=False):
 
         if verbose:
-            print("Adding cloudfree area percentages...")
+            print(f"Adding cloudfree area percentages for threshold {self.threshold}...")
 
         self._modification.loc[self.cloud_probability_histogram.index] = (
                 self.cloud_probability_cumulative[:, self.threshold] / self.cloud_probability_cumulative[:, -1]
