@@ -15,6 +15,7 @@ from s2cloudless import S2PixelCloudDetector
 from s2cloudless.utils import MODEL_BAND_IDS
 from osgeo import gdal
 from colorsys import hsv_to_rgb
+import torch
 
 
 class DatasetManager:
@@ -367,22 +368,43 @@ class ImageUtils:
         return s2_image.clip(0, 10000) / 10000
 
     @staticmethod
-    def rescale(image, bands_min, bands_max, clip=False):
+    def rescale(image, bands_min, bands_max, clip=False, for_tanh=False):
 
-        if not image.ndim == 3:
-            raise ValueError(f"Only accept images of shape [band, height, width]. "
+        if image.ndim == 3 and image.shape[0] == 13:
+            n_bands = image.shape[0]
+        elif image.ndim == 4 and image.shape[1] == 13:
+            n_bands = image.shape[1]
+        else:
+            raise ValueError(f"Only accept images of shape [(batch), band, height, width] with 13 bands. "
                              f"Got instead: {image.shape}")
-        if not image.shape[0] == bands_min.shape[0] == bands_max.shape[0]:
+
+        if not n_bands == bands_min.shape[0] == bands_max.shape[0]:
             raise ValueError(f"Number of image bands must be equal to number of values of bands_min and bands_max."
-                             f"Got instead: {image.shape[0]}, {bands_min.shape[0]}, {bands_max.shape[0]}")
+                             f"Got instead: {n_bands}, {bands_min.shape[0]}, {bands_max.shape[0]}")
 
         bands_min = np.array(bands_min)[:, np.newaxis, np.newaxis]
         bands_max = np.array(bands_max)[:, np.newaxis, np.newaxis]
 
+        if image.ndim == 4:
+            bands_min = bands_min[np.newaxis, ...]
+            bands_max = bands_max[np.newaxis, ...]
+
+        if isinstance(image, torch.Tensor):
+            bands_min = torch.from_numpy(bands_min).to(device=image.device, dtype=image.dtype)
+            bands_max = torch.from_numpy(bands_max).to(device=image.device, dtype=image.dtype)
+        else:
+            bands_min = bands_min.astype(image.dtype)
+            bands_max = bands_max.astype(image.dtype)
+
         if clip:
             image = image.clip(min=bands_min, max=bands_max)
+
         image = image - bands_min
         image = image / (bands_max - bands_min)
+
+        if for_tanh:
+            image = image - 0.5
+            image = image * 2
 
         return image
 
