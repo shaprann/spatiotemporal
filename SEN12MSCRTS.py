@@ -196,6 +196,8 @@ class ImageUtils:
     min_max_s2 = pd.read_csv(join(project_directory, "stats/S2_min_max.csv"), index_col="band")
     min_max_s1 = pd.read_csv(join(project_directory, "stats/S1_min_max.csv"), index_col="band")
 
+    driver = gdal.GetDriverByName("GTiff")
+
     def __init__(self, manager):
         self.manager = manager
 
@@ -353,6 +355,28 @@ class ImageUtils:
 
         with rasterio.open(filepath, 'w', **rasterio_profile) as dst:
             dst.write(image)
+
+    @classmethod
+    def save_tif_fast(
+            cls,
+            target_path,
+            output_image,
+            path_to_donor_image,
+            gdal_dtype
+    ):
+        donor_image_reader = gdal.Open(path_to_donor_image)
+        xs = donor_image_reader.RasterXSize
+        ys = donor_image_reader.RasterYSize
+        n_bands = output_image.shape[0]
+        output_writer = cls.driver.Create(target_path, xs, ys, n_bands, gdal_dtype)
+        output_writer.SetGeoTransform(donor_image_reader.GetGeoTransform())
+        output_writer.SetProjection(donor_image_reader.GetProjection())
+        for band_num in range(n_bands):
+            output_writer.GetRasterBand(band_num + 1).WriteArray(output_image[band_num])
+        output_writer.FlushCache()  ## saves to disk!!
+        output_writer = None
+        donor_image_reader = None
+
 
     @staticmethod
     def bands_last(s2_image):
