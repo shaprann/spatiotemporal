@@ -370,12 +370,12 @@ class ImageUtils:
     @staticmethod
     def rescale(image, bands_min, bands_max, clip=False, for_tanh=False):
 
-        if image.ndim == 3 and image.shape[0] == 13:
+        if image.ndim == 3:
             n_bands = image.shape[0]
-        elif image.ndim == 4 and image.shape[1] == 13:
+        elif image.ndim == 4:
             n_bands = image.shape[1]
         else:
-            raise ValueError(f"Only accept images of shape [(batch), band, height, width] with 13 bands. "
+            raise ValueError(f"Only accept images of shape [(batch), band, height, width]. "
                              f"Got instead: {image.shape}")
 
         if not n_bands == bands_min.shape[0] == bands_max.shape[0]:
