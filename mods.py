@@ -174,6 +174,104 @@ class ZeroPixelsS2(Modification):
         self.modification.loc[border_patches, ["S2", "S2CLOUDMAP"]] = pd.NA
 
 
+class NanPixelsS1(Modification):
+
+    def __init__(self, dataset_manager):
+
+        super().__init__(dataset_manager)
+
+        self.mod_dir = join(self.mod_dir, type(self).__name__)
+        self._config_path = join(self.dataset_manager.project_directory, "config", f"MOD_{type(self).__name__}.csv")
+
+        self.zero_patches = pd.read_csv(
+            join(self.dataset_manager.project_directory, "stats", "S1_patches_with_NANs.csv"),
+            index_col=["ROI", "tile", "patch", "timestep"]
+        )
+        self.zero_pixels = pd.read_csv(
+            join(self.dataset_manager.project_directory, "stats", "S1_NaN_pixels_count.csv"),
+            index_col=["ROI", "tile", "patch", "timestep"]
+        )
+        self.patches_to_interpolate = self.zero_patches.index
+
+        try:
+            self._modification = pd.read_csv(
+                self.config_path,
+                index_col=["ROI", "tile", "patch", "timestep"]
+            )
+            self.recalculate = False
+        except FileNotFoundError:
+            self._modification = pd.DataFrame(
+                pd.NA,
+                index=self.zero_patches.index,
+                columns=["S1"]
+            )
+            self.recalculate = True
+
+    @property
+    def modification(self):
+        return self._modification
+
+    @property
+    def config_path(self):
+        return self._config_path
+
+    def _apply(self, verbose=False):
+
+        if verbose:
+            print("Fixing zero pixels in S2 images...")
+
+        if self.recalculate:
+            self._interpolate_patches(verbose=verbose)
+            self._save()
+
+        self.dataset_manager._data.loc[self.modification.index, self.modification.columns] = self.modification
+
+    def _interpolate_patches(self, verbose):
+
+        patch_indices = self.patches_to_interpolate
+        if verbose:
+            patch_indices = tqdm(patch_indices, desc="Interpolating patches ")
+
+        for patch_index in patch_indices:
+
+            path_to_s1 = self.dataset_manager.data.loc[patch_index, "S1"]
+            s1_outfile = ImageFile(filepath=path_to_s1).set(root_dir=self.mod_dir)
+            s1_image = None
+
+            # add paths to modification
+            self.modification.loc[patch_index, "S1"] = s1_outfile.filepath
+
+            # skip interpolation if interpolated file already exists
+            if not isfile(s1_outfile.filepath):
+
+                s1_image = self.utils.read_tif_fast(path_to_s1)
+                bands_to_interpolate = (self.zero_pixels.loc[patch_index] != 0).values
+                bands_to_interpolate = np.flatnonzero(bands_to_interpolate)
+
+                self._interpolate_nans_inplace(s1_image, bands_to_interpolate)
+
+                makedirs(s1_outfile.directory, exist_ok=True)
+
+                self.utils.save_tif(
+                    filepath=s1_outfile.filepath,
+                    image=s1_image,
+                    rasterio_profile=self.utils.get_rasterio_profile(path_to_s1),
+                    dtype=s1_image.dtype
+                )
+
+    @staticmethod
+    def _interpolate_nans_inplace(image, bands):
+
+        for band in bands:
+            band_image = image[band]
+            nan_mask = np.isnan(band_image)
+            interpolator = NearestNDInterpolator(
+                x=np.argwhere(~nan_mask),
+                y=band_image[~nan_mask]
+            )
+            image[band, nan_mask] = interpolator(np.argwhere(nan_mask))
+
+
 class CategoricalCloudMaps(Modification):
 
     requirements = (

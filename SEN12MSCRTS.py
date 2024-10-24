@@ -14,6 +14,7 @@ from rasterio import RasterioIOError
 from s2cloudless import S2PixelCloudDetector
 from s2cloudless.utils import MODEL_BAND_IDS
 from osgeo import gdal
+from colorsys import hsv_to_rgb
 
 
 class DatasetManager:
@@ -456,6 +457,33 @@ class ImageUtils:
         for band in range(image.shape[0]):
             image[band] = np.nan_to_num(image[band], nan=np.nanmean(image[band]))
         return image
+
+    @staticmethod
+    def s1_to_complex(s1_image, clip=False):
+
+        if clip:
+            s1_image = np.clip(s1_image, a_min=0, a_max=1)
+
+        return s1_image[0] + 1j * s1_image[1]
+
+    @classmethod
+    def colorize(cls, s1_image, hsv=False):
+
+        rotation = np.cos(-np.pi / 4) + 1j * np.sin(-np.pi / 4)
+        complex_image = cls.s1_to_complex(s1_image, clip=True)
+        complex_image = complex_image * rotation  # rotate -45 degrees
+
+        r = np.abs(complex_image) / np.sqrt(2)  # [0 .. 1]
+        arg = np.angle(complex_image) / (np.pi / 4)  # [-1 .. 1]
+
+        h = 1 / 3 + (arg + 1) / 3  # np.clip(1/3 + (arg + 1) / 3, a_min=0, a_max=1)
+        s = np.clip(np.abs(arg * 2), a_min=0, a_max=1)
+        v = np.clip(r, a_min=0, a_max=1)
+
+        if hsv:
+            return np.stack([h, s, v], axis=-1)
+
+        return np.stack(np.vectorize(hsv_to_rgb)(h, s, v), axis=-1)
 
 
 # ######################## S2PixelCloudDetectorWrapper ##################
