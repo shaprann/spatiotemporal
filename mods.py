@@ -218,7 +218,7 @@ class NanPixelsS1(Modification):
     def _apply(self, verbose=False):
 
         if verbose:
-            print("Fixing zero pixels in S2 images...")
+            print("Fixing NaN pixels in S1 images...")
 
         if self.recalculate:
             self._interpolate_patches(verbose=verbose)
