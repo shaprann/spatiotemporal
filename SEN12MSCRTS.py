@@ -416,15 +416,12 @@ class ImageUtils:
         if isinstance(image, torch.Tensor):
             bands_min = torch.from_numpy(bands_min).to(device=image.device, dtype=image.dtype)
             bands_max = torch.from_numpy(bands_max).to(device=image.device, dtype=image.dtype)
-        else:
-            bands_min = bands_min.astype(image.dtype)
-            bands_max = bands_max.astype(image.dtype)
-
-        if clip:
-            image = image.clip(min=bands_min, max=bands_max)
 
         image = image - bands_min
         image = image / (bands_max - bands_min)
+
+        if clip:
+            image = image.clip(min=0.0, max=1.0)
 
         if for_tanh:
             image = image - 0.5
