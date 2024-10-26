@@ -4,7 +4,7 @@ from os import makedirs
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
-from os.path import join, isfile
+from os.path import join, isfile, isdir
 from tqdm import tqdm
 
 
@@ -348,3 +348,63 @@ class CloudfreeArea(Modification):
                 self.cloud_probability_cumulative[:, self.threshold] / self.cloud_probability_cumulative[:, -1]
         )
         self.dataset_manager._data["CLOUDFREEAREA"] = self._modification
+
+
+class AddPredictions(Modification):
+
+    requirements = tuple()
+
+    def __init__(self, dataset_manager, model_name: str, path_to_predictions: str):
+
+        super().__init__(dataset_manager, name_postfix=model_name)
+        self.check_requirements()
+        self.config_path = None
+        self.model_name = model_name
+
+        if not isdir(path_to_predictions):
+            raise FileNotFoundError(f"Can not add predictions for model {self.model_name}\n"
+                                    f"because provided directory does not exist: {path_to_predictions}")
+        self.path_to_predictions = path_to_predictions
+
+        self._modification = pd.DataFrame(
+            pd.NA,
+            index=self.dataset_manager.data.index,
+            columns=[self.model_name]
+        )
+
+    @property
+    def modification(self):
+        return self._modification
+
+    def add_a_single_prediction(self, path_to_original_s2):
+
+        try:
+            imagefile = ImageFile(filepath=path_to_original_s2)
+            imagefile = imagefile.set(root_dir=self.path_to_predictions)
+            if isfile(imagefile.filepath):
+                return imagefile.filepath
+            else:
+                return pd.NA
+        except AttributeError as err:
+            if path_to_original_s2 is np.nan:
+                pass
+            else:
+                raise err
+
+    def _apply(self, verbose=False):
+
+        if self.model_name in self.dataset_manager.data.columns:
+            raise ValueError(f"Can not add {self.model_name} to dataset manager, "
+                             f"because a column with that name already exists.\n"
+                             f"Dataset manager has following columns: {self.dataset_manager.data.columns}")
+
+        if verbose:
+            print(f"Adding predictions from model {self.model_name}...")
+
+        if verbose:
+            tqdm.pandas()
+            self._modification = self.dataset_manager.data["S2"].progress_apply(self.add_a_single_prediction)
+        else:
+            self._modification = self.dataset_manager.data["S2"].apply(self.add_a_single_prediction)
+
+        self.dataset_manager._data[self.model_name] = self._modification
