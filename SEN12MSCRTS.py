@@ -433,15 +433,18 @@ class ImageUtils:
         return image
 
     @classmethod
-    def rescale_s2(cls, s2_image, clip=False):
+    def rescale_s2(cls, s2_image, clip=False, bands=None):
 
-        if not s2_image.shape[0] == 13:
+        if not s2_image.shape[0] == 13 and bands is None:
             raise ValueError(f"Only accept images of shape [band, height, width] with 13 bands. "
                              f"Got instead: {s2_image.shape}")
+        mmin = cls.min_max_s2["min"] if bands is None else cls.min_max_s2["min"][bands]
+        mmax = cls.min_max_s2["max"] if bands is None else cls.min_max_s2["max"][bands]
+
         return cls.rescale(
             image=s2_image,
-            bands_min=cls.min_max_s2["min"],
-            bands_max=cls.min_max_s2["max"],
+            bands_min=mmin,
+            bands_max=mmax,
             clip=clip
         )
 
