@@ -314,7 +314,7 @@ class ImageUtils:
 
     @staticmethod
     def read_tif_fast(filepath, bands=None):
-        reader = gdal.Open(filepath)
+        reader = gdal.Open(filepath, gdal.GA_ReadOnly)
         image = reader.ReadAsArray()
         if bands is not None:
             image = image[bands]
