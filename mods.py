@@ -35,8 +35,14 @@ class Modification(ABC):
         raise NotImplementedError
 
     def apply(self, verbose=None):
+        if verbose:
+            print("    Starting...")
         self._apply(verbose=verbose)
+        if verbose:
+            print("    Done!")
         self.dataset_manager._modifications.append(self.modification_name)
+        if verbose:
+            print("    Added to manager!")
 
     def apply_modification(self, verbose=None):
         """ Alias for apply() """
