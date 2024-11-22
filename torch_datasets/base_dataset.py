@@ -1,12 +1,10 @@
-import torch
 from torch.utils.data import Dataset
-from abc import ABC, abstractmethod
 import pandas as pd
 from copy import copy
 from typing import List
 
 
-class BaseDataset(Dataset, ABC):
+class BaseDataset(Dataset):
 
     requirements = tuple()
 
@@ -28,9 +26,8 @@ class BaseDataset(Dataset, ABC):
             )
             self.data[(0, "index_tuple")] = self.data.index
 
-    @abstractmethod
     def initialize_data(self):
-        raise NotImplementedError
+        return self.manager.data
 
     def check_requirements(self):
         for requirement in self.requirements:
