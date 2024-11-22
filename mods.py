@@ -13,10 +13,10 @@ class Modification(ABC):
     requirements = tuple()
 
     def __init__(self, dataset_manager, name_postfix=None):
-        name_postfix = "" if name_postfix is None else "__" + name_postfix
+        self.name_postfix = "" if name_postfix is None else "__" + name_postfix
         self.dataset_manager = dataset_manager
         self.utils = self.dataset_manager.utils
-        self.modification_name = type(self).__name__ + name_postfix
+        self.modification_name = type(self).__name__ + self.name_postfix
         self.mod_dir = join(self.dataset_manager.root_dir + "_MODS", self.modification_name)
         self.config_path = join(self.dataset_manager.project_directory, "config", f"MOD_{self.modification_name}.csv")
 
@@ -54,9 +54,9 @@ class Modification(ABC):
 
 class ZeroPixelsS2(Modification):
 
-    def __init__(self, dataset_manager):
+    def __init__(self, dataset_manager, name_postfix=None):
 
-        super().__init__(dataset_manager)
+        super().__init__(dataset_manager, name_postfix=name_postfix)
 
         self.zero_patches = pd.read_csv(
             join(self.dataset_manager.project_directory, "stats", "S2_patches_with_zeros.csv"),
@@ -173,9 +173,9 @@ class ZeroPixelsS2(Modification):
 
 class NanPixelsS1(Modification):
 
-    def __init__(self, dataset_manager):
+    def __init__(self, dataset_manager, name_postfix=None):
 
-        super().__init__(dataset_manager)
+        super().__init__(dataset_manager, name_postfix=name_postfix)
 
         self.zero_patches = pd.read_csv(
             join(self.dataset_manager.project_directory, "stats", "S1_patches_with_NANs.csv"),
@@ -268,9 +268,9 @@ class CategoricalCloudMaps(Modification):
         ZeroPixelsS2.__name__,
     )
 
-    def __init__(self, dataset_manager):
+    def __init__(self, dataset_manager, name_postfix=None):
 
-        super().__init__(dataset_manager)
+        super().__init__(dataset_manager, name_postfix=name_postfix)
         self.check_requirements()
 
         try:
@@ -322,16 +322,20 @@ class CloudfreeArea(Modification):
         CategoricalCloudMaps.__name__,
     )
 
-    def __init__(self, dataset_manager, threshold: int = None):
+    def __init__(self, dataset_manager, name_postfix=None, threshold: int = None):
 
-        super().__init__(dataset_manager)
+        super().__init__(dataset_manager, name_postfix=name_postfix)
         self.check_requirements()
         self.config_path = None
         self.threshold = int(dataset_manager.cloud_probability_threshold * 100) if threshold is None else threshold
         if self.threshold < 0 or self.threshold > 100:
             raise ValueError(f"Threshold must be in range 0..100. Received instead: {self.threshold}")
         self.cloud_probability_histogram = pd.read_csv(
-            join(self.dataset_manager.project_directory, "stats", "cloud_probability_histogram_int.csv"),
+            join(
+                self.dataset_manager.project_directory,
+                "stats",
+                f"cloud_probability_histogram_int{self.name_postfix}.csv"
+            ),
             index_col=["ROI", "tile", "patch", "timestep"]
         )
         self._modification = pd.Series(
